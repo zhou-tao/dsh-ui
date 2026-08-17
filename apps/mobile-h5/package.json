@@ -1,0 +1,23 @@
+{
+  "name": "@dsh-ui/mobile-h5",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek Harness 手机互联 H5：移动端会话浏览/发消息，桥接服务代理 API（harness 绑定 127.0.0.1 且拒绝局域网 Origin，需同源桥）",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx server/index.mts",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@dsh-ui/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  }
+}

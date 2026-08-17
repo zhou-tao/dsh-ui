@@ -1,6 +1,6 @@
 # dsh-ui
 
-deepseek-harness 的 UI 层 monorepo：**Tauri 桌面程序** + **VS Code 扩展** + **终端 TUI**，共享同一套实测过的 harness 协议。
+deepseek-harness 的 UI 层 monorepo：**Tauri 桌面程序** + **VS Code 扩展** + **终端 TUI** + **手机互联 H5**，共享同一套实测过的 harness 协议。
 
 ## 1. 对接方案分析（决策记录）
 
@@ -62,12 +62,63 @@ dsh-ui/
 │   │   └── src-tauri/     # Cargo.toml / tauri.conf.json / capabilities / src/{main,lib}.rs / icons/
 │   ├── tui/               # @dsh-ui/tui — Ink v7 终端客户端（复用 protocol，--once 支持无 TTY/CI）
 │   │   └── src/{index,app}.tsx
+│   ├── mobile-h5/         # @dsh-ui/mobile-h5 — 手机互联 H5 + 桥接服务（harness 绑定 127.0.0.1 且拒绝局域网 Origin，需同源代理）
+│   │   ├── src/{main,api,styles}.ts/css
+│   │   └── server/index.mts      # 静态托管 + /api 服务端代理（0.0.0.0 监听）
 │   └── vscode-extension/  # dsh-ui-extension — spawn harness + WebviewPanel 代理桥
 │       ├── src/{extension,harness,webview}.ts
 │       └── media/panel.html
+└── docs/
+    ├── screenshots/       # 各 UI 截图（README 使用）
+    └── screenshots-src/   # TUI/VSCode 截图的可复现 HTML 源
 ```
 
-## 4. TUI 模块（apps/tui）与框架选型
+## 4. UI 一览（截图）
+
+### 4.1 桌面端（Tauri 2）
+
+主窗口加载 harness web UI（同源），Rust 侧负责进程生命周期：
+
+![桌面端](docs/screenshots/desktop.png)
+
+### 4.2 终端 TUI（Ink v7）
+
+会话列表（左）与会话视图（右，含实时事件流与消息输入）：
+
+![TUI 列表](docs/screenshots/tui-list.png)
+
+![TUI 会话](docs/screenshots/tui-conversation.png)
+
+### 4.3 VS Code 扩展
+
+WebviewPanel 内代理桥（webview 不直连网络，postMessage ↔ 扩展宿主 fetch ↔ harness）：
+
+![VS Code 扩展](docs/screenshots/vscode-extension.png)
+
+### 4.4 手机互联 H5
+
+移动端会话浏览 / 发消息（iPhone 视口）：
+
+![H5 会话列表](docs/screenshots/mobile-h5-list.png)
+
+![H5 会话详情](docs/screenshots/mobile-h5-conversation.png)
+
+#### 为什么需要桥接服务
+harness web profile **绑定 127.0.0.1 且拒绝局域网 Origin**（实测：带非 loopback Origin 的请求返回 403），手机无法直连。
+`apps/mobile-h5` 的桥接服务监听 `0.0.0.0`，同源托管 H5 静态页，并把 `/api/*` 服务端代理到 harness（服务端转发无 Origin 头，绕开围栏）。
+
+#### 使用方式
+```bash
+pnpm --filter @dsh-ui/mobile-h5 build   # 构建前端
+pnpm --filter @dsh-ui/mobile-h5 start   # 启动桥接服务（默认 4173 端口）
+```
+手机与 Mac 连同一 Wi-Fi，浏览器打开 `http://<Mac局域网IP>:4173` 即可：浏览会话 → 进入会话看历史 → 底部输入消息发送（4s 轮询刷新）。
+支持深链直达：`http://<Mac局域网IP>:4173/?session=<sessionId>`。
+开发模式：`pnpm --filter @dsh-ui/mobile-h5 dev`（vite 起在 1422 端口，已配 /api 代理）。
+
+> 安全提示：桥接服务无鉴权，仅建议在可信局域网内使用（MVP）。
+
+## 5. TUI 模块（apps/tui）与框架选型
 
 ### 4.1 当前主流 TUI 框架一览（2026-08 实测数据）
 
@@ -97,20 +148,22 @@ dsh-ui/
 - [ ] approval / question 交互：通过 `/api/respond` 回答（信封已确认）
 - [ ] 会话搜索 / 创建新会话（`session.create`）
 
-## 5. 当前状态
+## 6. 当前状态
 - ✅ protocol 包：构建通过，冒烟测试对活服务器真实返回（host.describe / session.list / workspace.list）
 - ✅ VSCode 扩展：tsc 编译通过（`pnpm --filter dsh-ui-extension compile`）
 - ✅ TUI：tsup 构建通过；无 TTY 模式实测返回（`--once` 列表 / `--once -- --session <id>` 历史渲染）；PTY 冒烟渲染正常；交互模式需真实终端
 - ✅ 桌面端：Rust 1.97 已装；`cargo check/build` 通过；`tauri icon` 全套图标已生成；`tauri:dev` 实际启动验证（窗口打开、进程稳定、自动连接已运行的 harness 并导航）
-- ⚠️ 桌面端下一步：生产打包（`tauri build`）；把 harness 打包为 sidecar 二进制（externalBin）替代 PATH 上的 `dsh`；窗口菜单/托盘等原生能力
+- ✅ 手机互联 H5：桥接服务实测（H5 页面 + `/api` 代理 + 局域网监听）；headless Chrome 截图验证真实渲染；修复了浏览器 `fetch` 解绑调用 bug
+- ⚠️ 桌面端下一步：生产打包（`tauri build`）；把 harness 打包为 sidecar 二进制（externalBin）替代 PATH 上的 `dsh`；窗口菜单/托盘等原生能力；中文输入法在调试模式下的兼容性跟进
 - ⚠️ 扩展下一步：`F5` 运行 Extension Development Host 实测面板桥；接入 mux 事件流（协议包已提供 harnessFrames）
+- ⚠️ H5 下一步：mux WebSocket 代理（实时推送替换 4s 轮询）；approval/question 交互；局域网访问鉴权
 
-## 6. 前置依赖
-- Node ≥ 22、pnpm 9（本机已具备）
-- Rust 工具链（rustup + cargo，桌面端编译需要，当前缺失）
+## 7. 前置依赖
+- Node ≥ 22、pnpm 9
+- Rust 工具链（rustup + cargo，桌面端编译需要）
 - `dsh` 命令可用（`npm i -g @deepseek-ai/dsh` 或通过 npx）
 
-## 7. 快速开始
+## 8. 快速开始
 ```bash
 pnpm install
 pnpm build              # 全 workspace 构建
@@ -119,4 +172,5 @@ pnpm --filter @dsh-ui/tui once            # TUI 一次性模式（无 TTY 自动
 pnpm --filter @dsh-ui/tui dev             # TUI 交互模式（需真实终端）
 pnpm --filter @dsh-ui/desktop tauri:dev   # 桌面端（需 Rust）
 pnpm --filter dsh-ui-extension compile    # 扩展编译
+pnpm --filter @dsh-ui/mobile-h5 start     # 手机互联桥接服务（http://<局域网IP>:4173）
 ```

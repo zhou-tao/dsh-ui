@@ -75,7 +75,8 @@ export class HarnessClient {
 
   constructor(options: HarnessClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
-    this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    // 浏览器中 fetch 必须以 window 为 this 调用，否则抛 "Illegal invocation"
+    this.fetchImpl = (options.fetchImpl ?? globalThis.fetch).bind(globalThis);
     this.timeoutMs = options.timeoutMs ?? 60_000;
   }
 
