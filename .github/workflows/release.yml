@@ -9,6 +9,7 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:        # 手动重跑 release 构建（如 CI 因基础设施故障失败后重试）
 
 jobs:
   # ---------- TUI：发布 npm 包 ----------
