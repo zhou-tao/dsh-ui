@@ -37,6 +37,8 @@ export type MuxFrame =
   | { type: "approval/resolved"; sessionId: string; approvalId: string; outcome: ApprovalOutcome }
   | { type: "question/requested"; sessionId: string; questions: AskUserQuestionItem[] }
   | { type: "question/resolved"; sessionId: string; questionId: string }
+  | { type: "session/queue"; sessionId: string; items: unknown[] }
+  | { type: "session/jobs"; sessionId: string; jobs: unknown[] }
   | { type: string; [k: string]: unknown }; // open tail: newer harness versions add frames
 
 export type HostFrame = { type: string; [k: string]: unknown };
@@ -53,9 +55,10 @@ export interface HarnessStreamOptions {
 
 /**
  * Open the downlink stream as an async iterable of frames.
- * Uses WebSocket when available (browser, and Node 22+ with --experimental-websocket),
- * otherwise falls back to SSE over streaming fetch — the same dual path the
- * harness's own client implements.
+ *
+ * 实测（v0.1.0-rc.6）：mux/host 端点在当前 harness 上要求 WebSocket 升级
+ * （HTTP GET 返回 426 Upgrade Required），且自动订阅全部会话（无 payload 选择，
+ * 客户端自行按 sessionId 过滤）。SSE 分支保留给未来支持它的 harness 构建。
  */
 export async function* harnessFrames(options: HarnessStreamOptions): AsyncGenerator<MuxFrame | HostFrame> {
   const kind = options.kind ?? "mux";

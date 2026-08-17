@@ -43,6 +43,54 @@ export interface SettingsNamespaceView {
   applies: "session" | "workspace" | "host" | (string & {});
 }
 
+/** Content block inside a message (text / reasoning / tool-result / …). */
+export interface ContentBlock {
+  type: string;
+  text?: string;
+  content?: unknown;
+  [k: string]: unknown;
+}
+
+/** One event in a session log. Taxonomy verified live from session.history. */
+export type SessionEvent =
+  | {
+      type: "user/message";
+      seq: number;
+      time: number;
+      data: { role: "user"; id: string; content: ContentBlock[]; source?: unknown };
+    }
+  | {
+      type: "assistant/message";
+      seq: number;
+      time: number;
+      data: { turn: number; step: number; message: { role: "assistant"; content: ContentBlock[] } };
+    }
+  | { type: "assistant/chunk"; seq: number; time: number; data: { turn: number; step: number; chunk: unknown } }
+  | {
+      type: "tool/call";
+      seq: number;
+      time: number;
+      data: { turn: number; step: number; callId: string; name: string; arguments: string };
+    }
+  | {
+      type: "tool/result";
+      seq: number;
+      time: number;
+      data: { turn: number; step: number; message: { source: unknown; content: ContentBlock[] } };
+    }
+  | { type: "turn/start"; seq: number; time: number; data: { turn: number } }
+  | { type: "turn/end"; seq: number; time: number; data: { turn: number; reason?: unknown } }
+  | { type: "step/start"; seq: number; time: number; data: { turn: number; step: number } }
+  | { type: "step/end"; seq: number; time: number; data: { turn: number; step: number } }
+  | { type: "todo/write"; seq: number; time: number; data: unknown }
+  | { type: "goal/change"; seq: number; time: number; data: unknown }
+  | { type: string; seq: number; time: number; data: unknown }; // open tail: newer event types
+
+/** Item of session.history: an event wrapped by the API. */
+export interface SessionHistoryEvent {
+  event: SessionEvent;
+}
+
 export interface WorkspaceView {
   workspaceId: string;
   path: string;
@@ -61,7 +109,8 @@ export interface Methods {
   "session.prompt": { payload: { sessionId: string; prompt: string }; value: unknown };
   "session.cancel": { payload: { sessionId: string }; value: { accepted: true } };
   "session.rename": { payload: { sessionId: string; title: string }; value: unknown };
-  "session.history": { payload: { sessionId: string; afterSeq?: number; limit?: number }; value: unknown };
+  // 注意：实测 limit/afterSeq 当前被服务端忽略，返回固定尾部窗口（~4 万条），客户端自行截断
+  "session.history": { payload: { sessionId: string; afterSeq?: number; limit?: number }; value: { events: SessionHistoryEvent[] } };
   "session.search": { payload: { query: string }; value: unknown };
   "session.fork": { payload: { sessionId: string }; value: unknown };
   "session.attachment": { payload: Record<string, unknown>; value: unknown };
