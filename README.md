@@ -101,9 +101,8 @@ dsh-ui/
 - ✅ protocol 包：构建通过，冒烟测试对活服务器真实返回（host.describe / session.list / workspace.list）
 - ✅ VSCode 扩展：tsc 编译通过（`pnpm --filter dsh-ui-extension compile`）
 - ✅ TUI：tsup 构建通过；无 TTY 模式实测返回（`--once` 列表 / `--once -- --session <id>` 历史渲染）；PTY 冒烟渲染正常；交互模式需真实终端
-- ✅ 桌面前端：vite 构建通过；Rust 侧已写好（进程管理+窗口导航），**本机缺 Rust 工具链，未编译验证**
-- ⚠️ 桌面端下一步：安装 Rust（rustup），`pnpm --filter @dsh-ui/desktop tauri:dev` 首次编译验证；
-  生产打包前 `pnpm tauri:icon` 生成 icns/ico，并把 harness 打包为 sidecar 二进制（externalBin）
+- ✅ 桌面端：Rust 1.97 已装；`cargo check/build` 通过；`tauri icon` 全套图标已生成；`tauri:dev` 实际启动验证（窗口打开、进程稳定、自动连接已运行的 harness 并导航）
+- ⚠️ 桌面端下一步：生产打包（`tauri build`）；把 harness 打包为 sidecar 二进制（externalBin）替代 PATH 上的 `dsh`；窗口菜单/托盘等原生能力
 - ⚠️ 扩展下一步：`F5` 运行 Extension Development Host 实测面板桥；接入 mux 事件流（协议包已提供 harnessFrames）
 
 ## 6. 前置依赖
