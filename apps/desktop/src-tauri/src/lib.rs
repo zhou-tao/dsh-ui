@@ -14,45 +14,40 @@ const HARNESS_URL: &str = "http://127.0.0.1:3080";
 const BOOT_TIMEOUT: Duration = Duration::from_secs(10);
 const BRIDGE_PORT: u16 = 4173;
 
-/// 注入到 harness 页面的悬浮手机图标（左下角设置入口右侧 + 桥接状态绿点）。
+/// 注入到 harness 页面的手机图标：插入 hHd-Xa_settingsArea（设置按钮右侧，flex 子元素 + 状态绿点）。
 const INJECT_JS: &str = r#"(() => {
   if (document.getElementById('dsh-phone-fab')) return;
-  const fab = document.createElement('div');
+  const fab = document.createElement('button');
   fab.id = 'dsh-phone-fab';
-  fab.style.cssText = 'position:fixed;z-index:2147483000;width:40px;height:40px;border-radius:50%;background:#3d7eff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.45);user-select:none;';
+  fab.type = 'button';
+  fab.setAttribute('aria-label', '手机互联');
+  fab.title = '手机互联（扫码连接）';
+  fab.style.cssText = 'cursor:pointer;width:28px;height:28px;border-radius:50%;background:#3d7eff;color:#fff;border:none;display:inline-flex;align-items:center;justify-content:center;font-size:15px;padding:0;margin-left:6px;flex:none;position:relative;';
   fab.textContent = '📱';
   const dot = document.createElement('span');
   dot.id = 'dsh-phone-dot';
-  dot.style.cssText = 'position:absolute;top:-1px;right:-1px;width:10px;height:10px;border-radius:50%;border:2px solid #0b1220;background:#8b949e;';
+  dot.style.cssText = 'position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;border:2px solid #fff;background:#8b949e;';
   fab.appendChild(dot);
-  const tryPlace = () => {
-    const body = document.body;
-    if (!body || document.getElementById('dsh-phone-fab') !== fab) return;
-    if (!body.contains(fab)) body.appendChild(fab);
-    let anchor = null;
-    for (const b of document.querySelectorAll('button')) {
-      const a = (b.getAttribute('aria-label') || '') + (b.getAttribute('title') || '') + (b.textContent || '');
-      if (/设置|settings/i.test(a)) { anchor = b; break; }
-    }
-    let left = 12, bottom = 12;
-    if (anchor) {
-      const r = anchor.getBoundingClientRect();
-      left = r.right + 8;
-      bottom = Math.max(8, window.innerHeight - r.bottom - r.height / 2 - 20);
-    } else {
-      const rail = document.querySelector('.qDHVXG_rail,[class*="rail"]');
-      if (rail) {
-        const rr = rail.getBoundingClientRect();
-        left = rr.right + 10;
-      }
-    }
-    fab.style.left = left + 'px';
-    fab.style.bottom = bottom + 'px';
+  const inject = () => {
+    const area = document.querySelector('.hHd-Xa_settingsArea, [class*="settingsArea"]');
+    if (area && !area.contains(fab)) { area.appendChild(fab); return true; }
+    return !!area && area.contains(fab);
   };
-  tryPlace();
-  setTimeout(tryPlace, 800);
-  setTimeout(tryPlace, 3000);
-  window.addEventListener('resize', tryPlace);
+  let tries = 0;
+  const timer = setInterval(() => { if (inject() || ++tries > 30) clearInterval(timer); }, 500);
+  let mo = null;
+  try {
+    mo = new MutationObserver(() => { if (inject()) mo.disconnect(); });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) { /* observer 不可用时仅轮询 */ }
+  // 15s 后 settingsArea 仍未出现：回退到左下角固定位置
+  setTimeout(() => { if (!inject() && !document.getElementById('dsh-phone-fab') && document.body) {
+    fab.style.position = 'fixed';
+    fab.style.left = '64px';
+    fab.style.bottom = '8px';
+    fab.style.zIndex = '2147483000';
+    document.body.appendChild(fab);
+  } }, 15000);
   const setDot = (ok) => { dot.style.background = ok ? '#56d364' : '#ff5f56'; };
   const ping = () => {
     try {
@@ -180,10 +175,10 @@ fn harness_status(state: State<'_, HarnessState>) -> HarnessStatus {
     }
 }
 
-#[tauri::command]
-fn start_harness(state: State<'_, HarnessState>, app: tauri::AppHandle) -> Result<HarnessStatus, String> {
+/// 共享启动逻辑：harness 已在运行则直接导航，否则 spawn + 等待就绪 + 导航。
+fn do_start_harness(state: &State<'_, HarnessState>, app: &tauri::AppHandle) -> Result<HarnessStatus, String> {
     if state.0.lock().unwrap().is_some() || harness_listening() {
-        navigate_to_harness(&app)?;
+        navigate_to_harness(app)?;
         return Ok(HarnessStatus {
             running: true,
             url: Some(HARNESS_URL.to_string()),
@@ -200,11 +195,16 @@ fn start_harness(state: State<'_, HarnessState>, app: tauri::AppHandle) -> Resul
     if !wait_for_harness(BOOT_TIMEOUT) {
         return Err(format!("harness 未在 {BOOT_TIMEOUT:?} 内就绪（{HARNESS_URL}）"));
     }
-    navigate_to_harness(&app)?;
+    navigate_to_harness(app)?;
     Ok(HarnessStatus {
         running: true,
         url: Some(HARNESS_URL.to_string()),
     })
+}
+
+#[tauri::command]
+fn start_harness(state: State<'_, HarnessState>, app: tauri::AppHandle) -> Result<HarnessStatus, String> {
+    do_start_harness(&state, &app)
 }
 
 #[tauri::command]
@@ -302,6 +302,13 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| dispatch_menu(app, event.id().as_ref()))
                 .build(app)?;
+            // 启动后自动进入 harness 首页（无需点击）
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(600));
+                let state = handle.state::<HarnessState>();
+                let _ = do_start_harness(&state, &handle);
+            });
             Ok(())
         })
         .on_menu_event(|app, event| dispatch_menu(app, event.id().as_ref()))

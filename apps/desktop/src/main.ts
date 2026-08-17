@@ -26,22 +26,24 @@ async function drawQr(url: string): Promise<void> {
   await QRCode.toCanvas(canvas, url, { width: 180, margin: 1, color: { dark: '#e6edf3', light: '#101a2e' } });
 }
 
-// ---------- 主窗口：精简着陆页（手机入口已移入 harness 界面左下角悬浮图标） ----------
+// ---------- 主窗口：启动即自动进入 harness 首页（失败则显示重试） ----------
 async function renderLanding(): Promise<void> {
-  const s = await invoke<HarnessStatus>('harness_status').catch(() => null);
   content.innerHTML =
     '<section class="panel">' +
       '<h2>DeepSeek Harness 桌面端</h2>' +
-      '<p class="muted small">' + (s?.running ? 'harness 运行中 · ' + esc(s.url ?? '') : 'harness 未运行') + '</p>' +
-      '<div class="row">' +
-        '<button id="goHarness" class="primary">进入 harness 界面</button>' +
-        '<button id="refresh">刷新</button>' +
-      '</div>' +
+      '<p class="muted small">正在进入 harness 界面…</p>' +
     '</section>';
-  document.getElementById('goHarness')?.addEventListener('click', () => {
-    void invoke('start_harness').catch((e) => alert(String(e)));
-  });
-  document.getElementById('refresh')?.addEventListener('click', () => void renderLanding());
+  try {
+    await invoke('start_harness');
+  } catch (e) {
+    content.innerHTML =
+      '<section class="panel">' +
+        '<h2>DeepSeek Harness 桌面端</h2>' +
+        '<p class="muted small err">启动失败: ' + esc(String(e)) + '</p>' +
+        '<div class="row"><button id="retry" class="primary">重试</button></div>' +
+      '</section>';
+    document.getElementById('retry')?.addEventListener('click', () => void renderLanding());
+  }
 }
 
 // ---------- 扫码窗口：局域网二维码 + 公网访问 ----------
