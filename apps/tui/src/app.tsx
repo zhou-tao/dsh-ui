@@ -41,6 +41,18 @@ export function App({ baseUrl }: AppProps): React.JSX.Element {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
+  /** 退出时中止实时流：WS 不关闭会拖住事件循环，导致终端卡住无法回到 shell */
+  const abortRef = useRef<AbortController | null>(null);
+  const getAbort = (): AbortController => {
+    if (!abortRef.current) abortRef.current = new AbortController();
+    return abortRef.current;
+  };
+  const quit = (): void => {
+    exit(); // Ink 同步恢复 raw mode / 光标
+    abortRef.current?.abort(); // 关闭 mux WebSocket
+    // 兜底：确保进程退出（防止残留句柄拖住事件循环）
+    setTimeout(() => process.exit(0), 150);
+  };
 
   // 流循环在 React 外运行，用 ref 读最新状态
   const sessionsRef = useRef(sessions);
@@ -103,7 +115,7 @@ export function App({ baseUrl }: AppProps): React.JSX.Element {
     const run = async (): Promise<void> => {
       for (;;) {
         try {
-          for await (const frame of harnessFrames({ baseUrl, kind: "mux" })) {
+          for await (const frame of harnessFrames({ baseUrl, kind: "mux", signal: getAbort().signal })) {
             if (cancelled) return;
             handleFrame(frame);
           }
@@ -121,6 +133,7 @@ export function App({ baseUrl }: AppProps): React.JSX.Element {
     return () => {
       cancelled = true;
       if (retry) clearTimeout(retry);
+      abortRef.current?.abort();
     };
   }, [baseUrl]);
 
@@ -192,17 +205,17 @@ export function App({ baseUrl }: AppProps): React.JSX.Element {
   useInput((input, key) => {
     const v = viewRef.current;
     if (v.kind === "list") {
-      if (key.ctrl && input === "c") exit();
+      if (key.ctrl && input === "c") quit();
       else if (key.upArrow) setSelected((p) => Math.max(0, p - 1));
       else if (key.downArrow) setSelected((p) => Math.min(sessionsRef.current.length - 1, p + 1));
       else if (key.return) {
         const s = sessionsRef.current[selected];
         if (s) void enterSession(s.sessionId);
       } else if (input === "r") void refresh();
-      else if (input === "q") exit();
+      else if (input === "q") quit();
     } else {
       // 会话视图：Esc 返回、方向键滚动、Ctrl+C 退出（其余键交给输入框）
-      if (key.ctrl && input === "c") exit();
+      if (key.ctrl && input === "c") quit();
       else if (key.escape) {
         setView({ kind: "list" });
         setScroll(0);
