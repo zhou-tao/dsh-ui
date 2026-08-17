@@ -2,6 +2,8 @@
 
 deepseek-harness 的 UI 层 monorepo：**Tauri 桌面程序** + **VS Code 扩展** + **终端 TUI** + **手机互联 H5**，共享同一套实测过的 harness 协议。
 
+> 📦 安装与使用：见 [docs/INSTALL.md](docs/INSTALL.md)（含各客户端安装方式、操作说明与常见问题）
+
 ## 1. 对接方案分析（决策记录）
 
 ### 背景事实（本仓库建立时实测，harness v0.1.0-rc.6）

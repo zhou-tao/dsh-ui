@@ -20,3 +20,6 @@ src-tauri/binaries/
 
 # vscode extension packaging
 *.vsix
+
+# npm pack artifacts
+*.tgz

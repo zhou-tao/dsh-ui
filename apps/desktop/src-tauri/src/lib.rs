@@ -1,21 +1,20 @@
 //! dsh-ui desktop shell: owns the harness web-profile process and points the
-//! main window at its UI.
-//!
-//! 行为：harness 已在监听默认端口时直接导航（不重复 spawn，避免 EADDRINUSE）；
-//! 否则 spawn `dsh --profile web` 并轮询等待就绪。
-use std::net::TcpStream;
+//! main window at its UI; provides the phone-companion QR entry (mobile-h5 bridge).
+use std::net::{TcpStream, UdpSocket};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{Manager, RunEvent, State};
+use tauri::menu::{Menu, MenuItem};
+use tauri::{Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
 
-/// Default harness web-profile port (dsh --profile web).
 const HARNESS_HOST: &str = "127.0.0.1";
 const HARNESS_PORT: u16 = 3080;
 const HARNESS_URL: &str = "http://127.0.0.1:3080";
 const BOOT_TIMEOUT: Duration = Duration::from_secs(10);
+const BRIDGE_PORT: u16 = 4173;
 
 pub struct HarnessState(pub Mutex<Option<Child>>);
+pub struct BridgeState(pub Mutex<Option<Child>>);
 
 #[derive(serde::Serialize, Clone)]
 pub struct HarnessStatus {
@@ -23,9 +22,12 @@ pub struct HarnessStatus {
     url: Option<String>,
 }
 
-/// TCP 探活：harness 是否已在监听默认端口。
 fn harness_listening() -> bool {
     TcpStream::connect((HARNESS_HOST, HARNESS_PORT)).is_ok()
+}
+
+fn bridge_listening() -> bool {
+    TcpStream::connect(("127.0.0.1", BRIDGE_PORT)).is_ok()
 }
 
 fn wait_for_harness(timeout: Duration) -> bool {
@@ -49,6 +51,61 @@ fn navigate_to_harness(app: &tauri::AppHandle) -> Result<(), String> {
     win.navigate(target).map_err(|e| format!("navigate failed: {e}"))
 }
 
+/// 主局域网 IP：UDP connect 探测出站地址（不发包），取非 loopback 地址。
+#[tauri::command]
+fn lan_ip() -> Option<String> {
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    match socket.local_addr() {
+        Ok(addr) if !addr.ip().is_loopback() => Some(addr.ip().to_string()),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+fn bridge_running() -> bool {
+    bridge_listening()
+}
+
+/// 启动手机互联桥接服务（node 运行 mobile-h5 构建产物）。
+/// 脚本位置：① DSH_UI_MOBILE_SERVER 环境变量 ② 打包进 bundle 的 Resources/mobile-bridge.js（release） ③ ../mobile-h5/dist-server/index.js（dev/monorepo）。
+#[tauri::command]
+fn start_bridge(app: tauri::AppHandle, state: State<'_, BridgeState>) -> Result<bool, String> {
+    if bridge_listening() {
+        return Ok(true);
+    }
+    let candidates = [
+        std::env::var("DSH_UI_MOBILE_SERVER").ok(),
+        app.path().resource_dir().ok().map(|d| d.join("mobile-bridge.js").to_string_lossy().to_string()),
+        Some("../mobile-h5/dist-server/index.js".to_string()),
+    ];
+    let script = candidates
+        .into_iter()
+        .flatten()
+        .find(|p| std::path::Path::new(p).exists())
+        .ok_or_else(|| "桥接脚本未找到（请先 pnpm --filter @dsh-ui/mobile-h5 build）".to_string())?;
+    let script = std::fs::canonicalize(&script).map_err(|e| format!("桥接脚本无效 {script}: {e}"))?;
+    let child = Command::new("node")
+        .arg(&script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("启动桥接失败: {e}"))?;
+    *state.0.lock().unwrap() = Some(child);
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
+        if bridge_listening() {
+            return Ok(true);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    if let Some(mut c) = state.0.lock().unwrap().take() {
+        let _ = c.kill();
+    }
+    Err("桥接服务未在 5s 内就绪".to_string())
+}
+
 #[tauri::command]
 fn harness_status(state: State<'_, HarnessState>) -> HarnessStatus {
     let running = state.0.lock().unwrap().is_some() || harness_listening();
@@ -60,7 +117,6 @@ fn harness_status(state: State<'_, HarnessState>) -> HarnessStatus {
 
 #[tauri::command]
 fn start_harness(state: State<'_, HarnessState>, app: tauri::AppHandle) -> Result<HarnessStatus, String> {
-    // 已有进程或端口已在监听：直接导航
     if state.0.lock().unwrap().is_some() || harness_listening() {
         navigate_to_harness(&app)?;
         return Ok(HarnessStatus {
@@ -68,7 +124,6 @@ fn start_harness(state: State<'_, HarnessState>, app: tauri::AppHandle) -> Resul
             url: Some(HARNESS_URL.to_string()),
         });
     }
-    // 否则 spawn dsh 并等待就绪
     let child = Command::new("dsh")
         .args(["--profile", "web"])
         .stdin(Stdio::null())
@@ -97,22 +152,62 @@ fn stop_harness(state: State<'_, HarnessState>) -> bool {
     false
 }
 
-fn stop(state: &State<'_, HarnessState>) {
-    if let Some(mut child) = state.0.lock().unwrap().take() {
-        let _ = child.kill();
-        let _ = child.wait();
+fn kill_children(state: &State<'_, HarnessState>, bridge: &State<'_, BridgeState>) {
+    for holder in [&state.0, &bridge.0] {
+        if let Some(mut child) = holder.lock().unwrap().take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
+}
+
+/// 打开/聚焦手机互联扫码窗口。
+fn open_mobile_qr(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("mobile-qr") {
+        let _ = win.show();
+        let _ = win.set_focus();
+        return;
+    }
+    let _ = WebviewWindowBuilder::new(app, "mobile-qr", WebviewUrl::App("index.html?qr=1".into()))
+        .title("手机互联")
+        .inner_size(430.0, 680.0)
+        .resizable(true)
+        .build();
 }
 
 pub fn run() {
     tauri::Builder::default()
         .manage(HarnessState(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![harness_status, start_harness, stop_harness])
+        .manage(BridgeState(Mutex::new(None)))
+        .setup(|app| {
+            let open_main = MenuItem::with_id(app, "open-main", "打开主界面", true, None::<&str>)?;
+            let mobile = MenuItem::with_id(app, "mobile-qr", "手机互联（扫码访问）", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open_main, &mobile])?;
+            app.set_menu(menu)?;
+            Ok(())
+        })
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "mobile-qr" => open_mobile_qr(app),
+            "open-main" => {
+                let _ = navigate_to_harness(app);
+            }
+            _ => {}
+        })
+        .invoke_handler(tauri::generate_handler![
+            harness_status,
+            start_harness,
+            stop_harness,
+            lan_ip,
+            bridge_running,
+            start_bridge,
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
             if let RunEvent::Exit = event {
-                stop(&app.state::<HarnessState>());
+                let h = app.state::<HarnessState>();
+                let b = app.state::<BridgeState>();
+                kill_children(&h, &b);
             }
         });
 }
