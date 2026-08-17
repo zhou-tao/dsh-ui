@@ -84,7 +84,7 @@ dsh-ui/
 
 参考：[TUI Renaissance 2026 深度对比](https://www.youngju.dev/blog/culture/2026-05-14-tui-development-ratatui-bubbletea-ink-textual-terminal-ui-renaissance-deep-dive-2026.en) · [Terminal Renaissance: Bubble Tea / Ratatui / Textual](https://blog.teliaz.com/2026/08/14/the-terminal-renaissance-building-production-tuis-with-bubble-tea-ratatui-and-textual/) · [TUI 框架技术选型（中文）](https://juejin.cn/post/7665656299220959278)；下载/星数来自 npm registry 与 GitHub API 当日实测。
 
-### 4.2 选型结论：Ink（TypeScript）
+### 4.2 选型决定（2026-08-17 确认）：Ink（TypeScript）✅
 1. **与 monorepo 同一语言栈**：直接 import `@dsh-ui/protocol`，零桥接、零额外工具链（本机无 Go/Rust，Go/Rust 方案无法在本机编译验证）。
 2. **协议是语言无关的 HTTP+WS/SSE**：若将来要"零 Node 依赖的单文件二进制 TUI"，可用 Bubble Tea（Go）或 Ratatui（Rust）重写客户端，对 harness 的对接方式完全不变。
 3. Ink 的组件化模型与 harness UI 形态天然契合：会话列表、实时日志流、approval/question 弹窗都可以拆成组件。
