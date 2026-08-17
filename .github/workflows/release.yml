@@ -82,6 +82,57 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx @vscode/vsce publish --packagePath artifacts/dsh-ui-extension-${{ github.ref_name }}.vsix
 
+
+  # ---------- TUI：独立可执行文件（bun compile，免装 node） ----------
+  tui-binaries:
+    name: TUI binary (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: bun-darwin-arm64
+            out: dsh-tui-macos-arm64
+          - os: macos-13
+            target: bun-darwin-x64
+            out: dsh-tui-macos-x64
+          - os: windows-latest
+            target: bun-windows-x64
+            out: dsh-tui-windows-x64.exe
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            out: dsh-tui-linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build standalone executable
+        run: |
+          mkdir -p artifacts
+          (cd apps/tui && bun build --compile ./src/index.tsx --target ${{ matrix.target }} --outfile ../../artifacts/${{ matrix.out }})
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: artifacts/${{ matrix.out }}
+
   # ---------- 桌面端：GitHub Release（macOS arm64 / macOS x64 / Windows x64） ----------
   desktop-release:
     name: Desktop ${{ matrix.platform }}
@@ -127,6 +178,7 @@ jobs:
             - **Windows**：`.msi` 与 `.exe`（NSIS 安装包）
             - **VS Code 扩展**：`dsh-ui-extension-<tag>.vsix`（Marketplace 或手动安装）
             - **H5 手机页**：`mobile-h5-dist.tar.gz`（解压后由桥接服务托管）
+            - **TUI**：`dsh-tui-macos-arm64` / `dsh-tui-macos-x64` / `dsh-tui-windows-x64.exe` / `dsh-tui-linux-x64`（独立可执行文件，免装 node；npm 用户也可 `npm i -g @dsh-ui/tui`）
             - **插件**：`dsh-deep-ui.tgz` / `dsh-remote.tgz`（`pnpm plugins:install` 安装）
             - 未签名构建：macOS 首次打开请右键 → 打开；Windows 见 SmartScreen 提示
             - 需要本机已安装 `dsh`（`npm i -g @deepseek-ai/dsh`）或 harness 已在 127.0.0.1:3080 运行
