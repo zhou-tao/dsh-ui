@@ -45,9 +45,10 @@ export interface SettingsNamespaceView {
 
 export interface WorkspaceView {
   workspaceId: string;
-  name: string;
-  sessions: unknown[];
-  order: unknown[];
+  path: string;
+  title?: string;
+  sessionIds: string[];
+  order?: unknown[];
 }
 
 /** Typed view of every RPC method: payload in, value out. Loose by design. */
@@ -66,7 +67,7 @@ export interface Methods {
   "session.attachment": { payload: Record<string, unknown>; value: unknown };
   "session.models": { payload: { sessionId?: string }; value: unknown };
   // ---- workspace ----
-  "workspace.list": { payload: Record<string, never>; value: { workspaces: WorkspaceView[] } };
+  "workspace.list": { payload: Record<string, never>; value: { items: WorkspaceView[] } };
   "workspace.create": { payload: { name: string }; value: { workspace: WorkspaceView } };
   "workspace.rename": { payload: { workspaceId: string; name: string }; value: { workspace: WorkspaceView } };
   "workspace.delete": { payload: { workspaceId: string }; value: { deleted: true } };

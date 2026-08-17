@@ -1,0 +1,28 @@
+{
+  "name": "@dsh-ui/tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek Harness TUI client (Ink v7): terminal console for the harness API",
+  "bin": {
+    "dsh-tui": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.tsx",
+    "build": "tsup src/index.tsx --format esm --out-dir dist --clean",
+    "typecheck": "tsc --noEmit",
+    "once": "tsx src/index.tsx --once"
+  },
+  "dependencies": {
+    "@dsh-ui/protocol": "workspace:*",
+    "ink": "^7.0.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,6 +1,6 @@
 # dsh-ui
 
-deepseek-harness 的 UI 层 monorepo：**Tauri 桌面程序** + **VS Code 扩展**，共享同一套实测过的 harness 协议。
+deepseek-harness 的 UI 层 monorepo：**Tauri 桌面程序** + **VS Code 扩展** + **终端 TUI**，共享同一套实测过的 harness 协议。
 
 ## 1. 对接方案分析（决策记录）
 
@@ -60,29 +60,63 @@ dsh-ui/
 ├── apps/
 │   ├── desktop/           # @dsh-ui/desktop — Tauri 2（Rust 管 harness 进程 + Vite 前端壳）
 │   │   └── src-tauri/     # Cargo.toml / tauri.conf.json / capabilities / src/{main,lib}.rs / icons/
+│   ├── tui/               # @dsh-ui/tui — Ink v7 终端客户端（复用 protocol，--once 支持无 TTY/CI）
+│   │   └── src/{index,app}.tsx
 │   └── vscode-extension/  # dsh-ui-extension — spawn harness + WebviewPanel 代理桥
 │       ├── src/{extension,harness,webview}.ts
 │       └── media/panel.html
 ```
 
-## 4. 当前状态
+## 4. TUI 模块（apps/tui）与框架选型
+
+### 4.1 当前主流 TUI 框架一览（2026-08 实测数据）
+
+| 框架 | 语言 | 指标（实测） | 定位 / 特点 |
+| --- | --- | --- | --- |
+| **Ink**（v7.1.1） | TypeScript | npm 周下载 388 万；GitHub 39.7k★ | **React 写 CLI**：组件化、hooks、即时重渲染；生态最大，适合"应用型"交互界面（会话列表/日志流/审批弹窗） |
+| **@clack/prompts**（v1.7.0） | TypeScript | npm 周下载 1571 万 | 提示词组件套件（create-* 脚手架标配）；不适合整页应用，适合向导式交互 |
+| **terminal-kit**（v3.1.4） | TypeScript | npm 周下载 16.7 万 | 底层全功能终端库（渲染、输入、控件、动画）；灵活但需自己搭 UI 结构 |
+| **blessed**（v0.1.81） / **@blessed/neo-blessed** | TypeScript | blessed 周下载 116 万（多为传递依赖） | ncurses 风格全屏控件；blessed 年久失修，**neo-blessed 是维护版**，适合面板化仪表盘 |
+| **Bubble Tea** | Go | GitHub 44.4k★ | **现代 TUI 标杆**（charmbracelet）：Elm 架构（Model/Update/View），charm 生态（Lip Gloss 样式 / Bubbles 组件 / Huh 表单），静态二进制 |
+| **Ratatui** | Rust | GitHub 22.2k★ | tui-rs 后继：即时模式渲染 + crossterm 后端，最活跃的 Rust TUI，性能与类型安全极佳 |
+| **Textual** | Python | GitHub 37.0k★ | Rich 作者出品：CSS 布局、响应式，可把终端应用跑成 Web app |
+| **prompt_toolkit** | Python | — | 输入交互底层库（IPython 在用），适合 REPL/补全场景 |
+
+参考：[TUI Renaissance 2026 深度对比](https://www.youngju.dev/blog/culture/2026-05-14-tui-development-ratatui-bubbletea-ink-textual-terminal-ui-renaissance-deep-dive-2026.en) · [Terminal Renaissance: Bubble Tea / Ratatui / Textual](https://blog.teliaz.com/2026/08/14/the-terminal-renaissance-building-production-tuis-with-bubble-tea-ratatui-and-textual/) · [TUI 框架技术选型（中文）](https://juejin.cn/post/7665656299220959278)；下载/星数来自 npm registry 与 GitHub API 当日实测。
+
+### 4.2 选型结论：Ink（TypeScript）
+1. **与 monorepo 同一语言栈**：直接 import `@dsh-ui/protocol`，零桥接、零额外工具链（本机无 Go/Rust，Go/Rust 方案无法在本机编译验证）。
+2. **协议是语言无关的 HTTP+WS/SSE**：若将来要"零 Node 依赖的单文件二进制 TUI"，可用 Bubble Tea（Go）或 Ratatui（Rust）重写客户端，对 harness 的对接方式完全不变。
+3. Ink 的组件化模型与 harness UI 形态天然契合：会话列表、实时日志流、approval/question 弹窗都可以拆成组件。
+4. 骨架已支持 `--once` 无 TTY 模式（CI/管道可跑），交互模式需要真实终端。
+
+### 4.3 后续路线（TUI）
+- [ ] 会话视图：进入选中 session，轮询 `session.history`（unary，已验证）显示消息流
+- [ ] 实时推送：用协议包 `harnessFrames` 订阅 `/api/events.mux`（WS/SSE），替换轮询；需先钉死 mux 订阅 payload 语义
+- [ ] approval / question 交互：通过 `/api/respond` 回答（信封已确认）
+- [ ] 会话输入框：`session.prompt` / `session.create` 发消息
+
+## 5. 当前状态
 - ✅ protocol 包：构建通过，冒烟测试对活服务器真实返回（host.describe / session.list / workspace.list）
 - ✅ VSCode 扩展：tsc 编译通过（`pnpm --filter dsh-ui-extension compile`）
+- ✅ TUI：tsup 构建通过，`--once`/无 TTY 模式对活服务器实测返回（host/session/workspace）；交互模式需真实终端
 - ✅ 桌面前端：vite 构建通过；Rust 侧已写好（进程管理+窗口导航），**本机缺 Rust 工具链，未编译验证**
 - ⚠️ 桌面端下一步：安装 Rust（rustup），`pnpm --filter @dsh-ui/desktop tauri:dev` 首次编译验证；
   生产打包前 `pnpm tauri:icon` 生成 icns/ico，并把 harness 打包为 sidecar 二进制（externalBin）
 - ⚠️ 扩展下一步：`F5` 运行 Extension Development Host 实测面板桥；接入 mux 事件流（协议包已提供 harnessFrames）
 
-## 5. 前置依赖
+## 6. 前置依赖
 - Node ≥ 22、pnpm 9（本机已具备）
 - Rust 工具链（rustup + cargo，桌面端编译需要，当前缺失）
 - `dsh` 命令可用（`npm i -g @deepseek-ai/dsh` 或通过 npx）
 
-## 6. 快速开始
+## 7. 快速开始
 ```bash
 pnpm install
 pnpm build              # 全 workspace 构建
 pnpm smoke              # protocol 冒烟：需本机 harness web profile 在跑（dsh --profile web）
+pnpm --filter @dsh-ui/tui once            # TUI 一次性模式（无 TTY 自动回退此模式）
+pnpm --filter @dsh-ui/tui dev             # TUI 交互模式（需真实终端）
 pnpm --filter @dsh-ui/desktop tauri:dev   # 桌面端（需 Rust）
 pnpm --filter dsh-ui-extension compile    # 扩展编译
 ```
