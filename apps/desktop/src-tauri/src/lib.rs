@@ -14,40 +14,52 @@ const HARNESS_URL: &str = "http://127.0.0.1:3080";
 const BOOT_TIMEOUT: Duration = Duration::from_secs(10);
 const BRIDGE_PORT: u16 = 4173;
 
-/// 注入到 harness 页面的手机图标：插入 hHd-Xa_settingsArea（设置按钮右侧，flex 子元素 + 状态绿点）。
+/// 注入到 harness 页面的手机图标：浮动在设置按钮右侧上层（SVG smartphone-line + 状态绿点）。
+/// 点击触发通道：__TAURI_INTERNALS__.invoke → dshui:// 自定义协议 → alert 兜底。
 const INJECT_JS: &str = r#"(() => {
   if (document.getElementById('dsh-phone-fab')) return;
-  const fab = document.createElement('button');
+  const fab = document.createElement('div');
   fab.id = 'dsh-phone-fab';
-  fab.type = 'button';
-  fab.setAttribute('aria-label', '手机互联');
   fab.title = '手机互联（扫码连接）';
-  fab.style.cssText = 'cursor:pointer;width:28px;height:28px;border-radius:50%;background:#3d7eff;color:#fff;border:none;display:inline-flex;align-items:center;justify-content:center;font-size:15px;padding:0;margin-left:6px;flex:none;position:relative;';
-  fab.textContent = '📱';
+  fab.setAttribute('aria-label', '手机互联');
+  fab.style.cssText = 'position:fixed;z-index:2147483000;width:32px;height:32px;border-radius:50%;background:#3d7eff;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:auto;user-select:none;';
+  fab.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none"><path fill="currentColor" d="M7 4v16h10V4zM6 2h12a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1m6 15a1 1 0 1 1 0 2a1 1 0 0 1 0-2"/></svg>';
   const dot = document.createElement('span');
   dot.id = 'dsh-phone-dot';
-  dot.style.cssText = 'position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;border:2px solid #fff;background:#8b949e;';
+  dot.style.cssText = 'position:absolute;top:0;right:0;width:9px;height:9px;border-radius:50%;border:2px solid #fff;background:#8b949e;';
   fab.appendChild(dot);
-  const inject = () => {
+  const place = () => {
     const area = document.querySelector('.hHd-Xa_settingsArea, [class*="settingsArea"]');
-    if (area && !area.contains(fab)) { area.appendChild(fab); return true; }
-    return !!area && area.contains(fab);
+    let btn = null;
+    if (area) {
+      const btns = area.querySelectorAll('button, [role="button"]');
+      for (const b of btns) {
+        const a = (b.getAttribute('aria-label') || '') + (b.getAttribute('title') || '') + (b.textContent || '');
+        if (/设置|settings/i.test(a)) { btn = b; break; }
+      }
+      if (!btn && btns.length) btn = btns[btns.length - 1];
+    }
+    const anchor = btn ?? area;
+    if (!anchor) return false;
+    const r = anchor.getBoundingClientRect();
+    fab.style.position = 'fixed';
+    fab.style.left = (r.right + 6) + 'px';
+    fab.style.top = (r.top + r.height / 2 - 16) + 'px';
+    fab.style.zIndex = '2147483000';
+    fab.style.bottom = 'auto';
+    if (!document.body.contains(fab)) document.body.appendChild(fab);
+    return true;
   };
   let tries = 0;
-  const timer = setInterval(() => { if (inject() || ++tries > 30) clearInterval(timer); }, 500);
+  const timer = setInterval(() => { if (place() || ++tries > 30) clearInterval(timer); }, 500);
   let mo = null;
   try {
-    mo = new MutationObserver(() => { if (inject()) mo.disconnect(); });
-    mo.observe(document.documentElement, { childList: true, subtree: true });
-  } catch (e) { /* observer 不可用时仅轮询 */ }
-  // 15s 后 settingsArea 仍未出现：回退到左下角固定位置
-  setTimeout(() => { if (!inject() && !document.getElementById('dsh-phone-fab') && document.body) {
-    fab.style.position = 'fixed';
-    fab.style.left = '64px';
-    fab.style.bottom = '8px';
-    fab.style.zIndex = '2147483000';
-    document.body.appendChild(fab);
-  } }, 15000);
+    mo = new MutationObserver(() => place());
+    mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+  } catch (e) { /* ignore */ }
+  window.addEventListener('resize', place);
+  setTimeout(place, 800);
+  setTimeout(place, 3000);
   const setDot = (ok) => { dot.style.background = ok ? '#56d364' : '#ff5f56'; };
   const ping = () => {
     try {
@@ -58,14 +70,24 @@ const INJECT_JS: &str = r#"(() => {
   };
   ping();
   setInterval(ping, 5000);
-  fab.addEventListener('click', () => {
+  const open = () => {
     try {
       if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
-        window.__TAURI_INTERNALS__.invoke('open_mobile_qr');
-      } else alert('手机互联：请从桌面端菜单/托盘打开扫码窗口');
-    } catch (e) { alert('手机互联：' + e.message); }
-  });
+        window.__TAURI_INTERNALS__.invoke('open_mobile_qr').catch(() => {
+          try { location.href = 'dshui://open-mobile-qr'; } catch (e2) { alert('手机互联：' + e2.message); }
+        });
+        return;
+      }
+      try { location.href = 'dshui://open-mobile-qr'; }
+      catch (e) { alert('手机互联：请从桌面端菜单/托盘打开扫码窗口'); }
+    } catch (e) {
+      try { location.href = 'dshui://open-mobile-qr'; } catch (e2) { alert('手机互联：' + e.message); }
+    }
+  };
+  fab.addEventListener('click', open);
+  fab.addEventListener('touchend', (e) => { e.preventDefault(); open(); });
 })();"#;
+
 
 pub struct HarnessState(pub Mutex<Option<Child>>);
 pub struct BridgeState(pub Mutex<Option<Child>>);
@@ -312,6 +334,16 @@ pub fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| dispatch_menu(app, event.id().as_ref()))
+        // 注入图标的兜底触发通道：dshui://open-mobile-qr 打开扫码窗口
+        .register_uri_scheme_protocol("dshui", |ctx, request| {
+            if request.uri().to_string().contains("open-mobile-qr") {
+                open_mobile_qr_win(ctx.app_handle());
+            }
+            tauri::http::Response::builder()
+                .status(204)
+                .body(Vec::new())
+                .unwrap()
+        })
         .invoke_handler(tauri::generate_handler![
             harness_status,
             start_harness,
@@ -333,4 +365,3 @@ pub fn run() {
             }
         });
 }
-
