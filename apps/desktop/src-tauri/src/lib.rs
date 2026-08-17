@@ -14,6 +14,64 @@ const HARNESS_URL: &str = "http://127.0.0.1:3080";
 const BOOT_TIMEOUT: Duration = Duration::from_secs(10);
 const BRIDGE_PORT: u16 = 4173;
 
+/// 注入到 harness 页面的悬浮手机图标（左下角设置入口右侧 + 桥接状态绿点）。
+const INJECT_JS: &str = r#"(() => {
+  if (document.getElementById('dsh-phone-fab')) return;
+  const fab = document.createElement('div');
+  fab.id = 'dsh-phone-fab';
+  fab.style.cssText = 'position:fixed;z-index:2147483000;width:40px;height:40px;border-radius:50%;background:#3d7eff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.45);user-select:none;';
+  fab.textContent = '📱';
+  const dot = document.createElement('span');
+  dot.id = 'dsh-phone-dot';
+  dot.style.cssText = 'position:absolute;top:-1px;right:-1px;width:10px;height:10px;border-radius:50%;border:2px solid #0b1220;background:#8b949e;';
+  fab.appendChild(dot);
+  const tryPlace = () => {
+    const body = document.body;
+    if (!body || document.getElementById('dsh-phone-fab') !== fab) return;
+    if (!body.contains(fab)) body.appendChild(fab);
+    let anchor = null;
+    for (const b of document.querySelectorAll('button')) {
+      const a = (b.getAttribute('aria-label') || '') + (b.getAttribute('title') || '') + (b.textContent || '');
+      if (/设置|settings/i.test(a)) { anchor = b; break; }
+    }
+    let left = 12, bottom = 12;
+    if (anchor) {
+      const r = anchor.getBoundingClientRect();
+      left = r.right + 8;
+      bottom = Math.max(8, window.innerHeight - r.bottom - r.height / 2 - 20);
+    } else {
+      const rail = document.querySelector('.qDHVXG_rail,[class*="rail"]');
+      if (rail) {
+        const rr = rail.getBoundingClientRect();
+        left = rr.right + 10;
+      }
+    }
+    fab.style.left = left + 'px';
+    fab.style.bottom = bottom + 'px';
+  };
+  tryPlace();
+  setTimeout(tryPlace, 800);
+  setTimeout(tryPlace, 3000);
+  window.addEventListener('resize', tryPlace);
+  const setDot = (ok) => { dot.style.background = ok ? '#56d364' : '#ff5f56'; };
+  const ping = () => {
+    try {
+      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+        window.__TAURI_INTERNALS__.invoke('bridge_running').then(setDot).catch(() => setDot(false));
+      } else setDot(false);
+    } catch { setDot(false); }
+  };
+  ping();
+  setInterval(ping, 5000);
+  fab.addEventListener('click', () => {
+    try {
+      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+        window.__TAURI_INTERNALS__.invoke('open_mobile_qr');
+      } else alert('手机互联：请从桌面端菜单/托盘打开扫码窗口');
+    } catch (e) { alert('手机互联：' + e.message); }
+  });
+})();"#;
+
 pub struct HarnessState(pub Mutex<Option<Child>>);
 pub struct BridgeState(pub Mutex<Option<Child>>);
 
@@ -49,7 +107,13 @@ fn navigate_to_harness(app: &tauri::AppHandle) -> Result<(), String> {
     let target = HARNESS_URL
         .parse::<tauri::Url>()
         .map_err(|e| format!("bad harness url {HARNESS_URL}: {e}"))?;
-    win.navigate(target).map_err(|e| format!("navigate failed: {e}"))
+    win.navigate(target).map_err(|e| format!("navigate failed: {e}"))?;
+    // 页面加载后注入左下角手机图标（注入脚本自带重试，覆盖加载时序）
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(1200));
+        let _ = win.eval(INJECT_JS);
+    });
+    Ok(())
 }
 
 /// 主局域网 IP：UDP connect 探测出站地址（不发包），取非 loopback 地址。
@@ -163,23 +227,55 @@ fn kill_children(state: &State<'_, HarnessState>, bridge: &State<'_, BridgeState
 }
 
 /// 打开/聚焦手机互联扫码窗口。
-fn open_mobile_qr(app: &tauri::AppHandle) {
+fn open_mobile_qr_win(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("mobile-qr") {
         let _ = win.show();
         let _ = win.set_focus();
         return;
     }
-    let _ = WebviewWindowBuilder::new(app, "mobile-qr", WebviewUrl::App("index.html?qr=1".into()))
+    let _ = WebviewWindowBuilder::new(app, "mobile-qr", WebviewUrl::App("index.html".into()))
         .title("手机互联")
-        .inner_size(430.0, 680.0)
+        .inner_size(430.0, 700.0)
         .resizable(true)
         .build();
+}
+
+/// 供注入的悬浮图标调用（前端 invoke 只能调已注册命令）。
+#[tauri::command]
+fn open_mobile_qr(app: tauri::AppHandle) -> Result<(), String> {
+    open_mobile_qr_win(&app);
+    Ok(())
+}
+
+/// 在 harness 页面注入左下角手机图标（进入界面后调用）。
+fn inject_phone_icon(win: &tauri::WebviewWindow) {
+    let _ = win.eval(INJECT_JS);
+}
+
+/// 启动公网隧道（代理到桥接服务 /tunnel/start，返回 {url, token} JSON）。
+#[tauri::command]
+fn start_tunnel() -> Result<String, String> {
+    let out = Command::new("curl")
+        .args(["-sS", "-m", "30", "-X", "POST", "http://127.0.0.1:4173/tunnel/start"])
+        .output()
+        .map_err(|e| format!("调用桥接服务失败: {e}"))?;
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+/// 查询隧道状态（GET /tunnel）。
+#[tauri::command]
+fn tunnel_status() -> Result<String, String> {
+    let out = Command::new("curl")
+        .args(["-sS", "-m", "5", "http://127.0.0.1:4173/tunnel"])
+        .output()
+        .map_err(|e| format!("调用桥接服务失败: {e}"))?;
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
 /// 菜单与托盘共用的事件分发。
 fn dispatch_menu(app: &tauri::AppHandle, id: &str) {
     match id {
-        "mobile-qr" => open_mobile_qr(app),
+        "mobile-qr" => open_mobile_qr_win(app),
         "open-main" => {
             let _ = navigate_to_harness(app);
         }
@@ -216,6 +312,9 @@ pub fn run() {
             lan_ip,
             bridge_running,
             start_bridge,
+            open_mobile_qr,
+            start_tunnel,
+            tunnel_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -114,11 +114,11 @@ harness web profile **绑定 127.0.0.1 且拒绝局域网 Origin**（实测：�
 pnpm --filter @dsh-ui/mobile-h5 build   # 构建前端
 pnpm --filter @dsh-ui/mobile-h5 start   # 启动桥接服务（默认 4173 端口）
 ```
-手机与 Mac 连同一 Wi-Fi，浏览器打开 `http://<Mac局域网IP>:4173` 即可：浏览会话 → 进入会话看历史 → 底部输入消息发送（4s 轮询刷新）。
-支持深链直达：`http://<Mac局域网IP>:4173/?session=<sessionId>`。
-开发模式：`pnpm --filter @dsh-ui/mobile-h5 dev`（vite 起在 1422 端口，已配 /api 代理）。
+- **同一 Wi-Fi**：手机浏览器打开 `http://<Mac局域网IP>:4173`：浏览会话 → 进入看历史 → 底部发消息（4s 轮询）。支持深链 `/?session=<id>`。
+- **任意网络（无需同 Wi-Fi）**：桌面端扫码窗口点"开启公网访问"，桥接服务通过 `cloudflared` 快速隧道（免费、免账号）生成公网 URL，并启用**随机访问令牌**（Cookie 机制，H5 零改动；未带令牌的 API 请求返回 403）。
+- 开发模式：`pnpm --filter @dsh-ui/mobile-h5 dev`（vite 起在 1422 端口，已配 /api 代理）。
 
-> 安全提示：桥接服务无鉴权，仅建议在可信局域网内使用（MVP）。
+> 安全提示：局域网访问无鉴权（可信网络内使用）；**公网隧道强制访问令牌**（harness 能执行代码，公网暴露必须带令牌）。
 
 ## 5. TUI 模块（apps/tui）与框架选型
 
