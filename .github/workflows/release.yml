@@ -33,8 +33,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build TUI
-        run: pnpm --filter @dsh-ui/tui build
+      - name: Build (turbo：protocol → tui)
+        run: pnpm build
 
       - name: Publish @dsh-ui/tui (无 NPM_TOKEN 时跳过)
         if: env.NPM_TOKEN != ''
@@ -62,8 +62,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build extension
-        run: pnpm --filter dsh-ui-extension build
+      - name: Build protocol + extension
+        run: |
+          pnpm --filter @dsh-ui/protocol build
+          pnpm --filter dsh-ui-extension build
 
       - name: Bundle webview (inline @dsh-ui/protocol，vsix 自包含)
         run: |
@@ -121,6 +123,9 @@ jobs:
 
       - name: Install bun
         uses: oven-sh/setup-bun@v2
+
+      - name: Build protocol (bun 解析 @dsh-ui/protocol 的 dist 产物)
+        run: pnpm --filter @dsh-ui/protocol build
 
       - name: Build standalone executable
         run: |
@@ -203,8 +208,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build H5
-        run: pnpm --filter @dsh-ui/mobile-h5 build
+      - name: Build (turbo：protocol → mobile-h5)
+        run: pnpm build
 
       - name: Archive H5 dist
         run: (cd apps/mobile-h5 && tar -czf /tmp/mobile-h5-dist.tar.gz dist)
