@@ -37,7 +37,8 @@ jobs:
       - name: Build TUI
         run: pnpm --filter @dsh-ui/tui build
 
-      - name: Publish @dsh-ui/tui
+      - name: Publish @dsh-ui/tui (无 NPM_TOKEN 时跳过)
+        if: env.NPM_TOKEN != ''
         run: pnpm --filter @dsh-ui/tui publish --no-git-checks --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
