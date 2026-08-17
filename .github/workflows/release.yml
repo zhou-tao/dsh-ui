@@ -11,6 +11,9 @@ on:
     tags: ['v*']
   workflow_dispatch:        # 手动重跑 release 构建（如 CI 因基础设施故障失败后重试）
 
+permissions:
+  contents: write           # 创建/更新 GitHub Release 与附件必需（默认 token 为只读）
+
 jobs:
   # ---------- TUI：发布 npm 包 ----------
   tui-publish:
