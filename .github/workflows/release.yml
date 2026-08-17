@@ -74,7 +74,7 @@ jobs:
         run: |
           ESB=$(ls node_modules/.pnpm/esbuild@*/node_modules/esbuild/bin/esbuild 2>/dev/null | head -1)
           if [ -z "$ESB" ]; then echo "::error::esbuild not found in pnpm store"; exit 1; fi
-          (cd apps/vscode-extension && "$OLDPWD/$ESB" out/webview.js --bundle --format=cjs --platform=node --external:vscode --outfile=out/webview.js)
+          (cd apps/vscode-extension && "$OLDPWD/$ESB" out/webview.js --bundle --format=cjs --platform=node --external:vscode --outfile=out/webview.js --allow-overwrite)
 
       - name: Package .vsix (--no-dependencies 规避 pnpm workspace 的 npm list 问题)
         run: |
