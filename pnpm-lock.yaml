@@ -45,10 +45,19 @@ importers:
       '@dsh-ui/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      marked:
+        specifier: ^18.0.9
+        version: 18.0.9
+      qrcode:
+        specifier: ^1.5.4
+        version: 1.5.4
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.1
+      '@types/qrcode':
+        specifier: ^1.5.5
+        version: 1.5.6
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(postcss@8.5.26)(tsx@4.23.12)(typescript@5.9.3)
@@ -111,6 +120,10 @@ importers:
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
+
+  plugins/dsh-deep-ui: {}
+
+  plugins/dsh-remote: {}
 
 packages:
 
@@ -1091,6 +1104,11 @@ packages:
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
+
+  marked@18.0.9:
+    resolution: {integrity: sha512-/Sa4qiiHZxf0/FQdBBowr9q4r10krCwMvpK48FUBdXdUXScDxiQGR9zCPrFgRVR5LU3iySOiIjy09ZQvADir1w==}
+    engines: {node: '>= 20'}
+    hasBin: true
 
   mimic-fn@2.1.0:
     resolution: {integrity: sha512-OqbOk5oEQeAZ8WXWydlu9HJjz9WVdEIvamMCcXmuqUYjTknH/sqsWvhQ3vgwKFRR1HpjvNBKQ37nbJgYzGqGcg==}
@@ -2091,6 +2109,8 @@ snapshots:
   magic-string@0.30.21:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  marked@18.0.9: {}
 
   mimic-fn@2.1.0: {}
 

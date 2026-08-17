@@ -1,0 +1,174 @@
+name: Release
+
+# 触发：推送 v* 标签（如 v0.1.0）
+# 产物：
+#   - TUI 发布到 npm（需 NPM_TOKEN，@dsh-ui scope 的 publish 权限）
+#   - 桌面端 GitHub Release：macOS(Apple Silicon .dmg / Intel .dmg) + Windows(.msi/.exe)
+#   - VS Code 扩展发布（需 VSCE_PAT；未配置 token 时自动跳过）
+#   - H5 静态包 + 插件 bundle 附加到 Release
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  # ---------- TUI：发布 npm 包 ----------
+  tui-publish:
+    name: Publish TUI to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build TUI
+        run: pnpm --filter @dsh-ui/tui build
+
+      - name: Publish @dsh-ui/tui
+        run: pnpm --filter @dsh-ui/tui publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ---------- VS Code 扩展：打包 + 发布（无 VSCE_PAT 时跳过发布） ----------
+  vscode-publish:
+    name: Publish VS Code extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build extension
+        run: pnpm --filter @dsh-ui/vscode-extension build
+
+      - name: Package .vsix
+        run: |
+          mkdir -p artifacts
+          (cd apps/vscode-extension && npx @vscode/vsce package --out ../../artifacts/dsh-ui-extension-${{ github.ref_name }}.vsix)
+
+      - name: Publish to VS Code Marketplace
+        if: env.VSCE_PAT != ''
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce publish --packagePath artifacts/dsh-ui-extension-${{ github.ref_name }}.vsix
+
+  # ---------- 桌面端：GitHub Release（macOS arm64 / macOS x64 / Windows x64） ----------
+  desktop-release:
+    name: Desktop ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-14      # Apple Silicon
+          - platform: macos-13      # Intel
+          - platform: windows-latest
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build & upload release assets
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseDraft: true
+          prerelease: false
+          releaseBody: |
+            ## DeepSeek Harness UI
+
+            桌面客户端（Tauri 2）+ 手机互联（同一 Wi-Fi 局域网扫码）。
+
+            - **macOS**：Apple Silicon（arm64）与 Intel（x86_64）各一个 `.dmg`
+            - **Windows**：`.msi` 与 `.exe`（NSIS 安装包）
+            - **VS Code 扩展**：`dsh-ui-extension-<tag>.vsix`（Marketplace 或手动安装）
+            - **H5 手机页**：`mobile-h5-dist.tar.gz`（解压后由桥接服务托管）
+            - **插件**：`dsh-deep-ui.tgz` / `dsh-remote.tgz`（`pnpm plugins:install` 安装）
+            - 未签名构建：macOS 首次打开请右键 → 打开；Windows 见 SmartScreen 提示
+            - 需要本机已安装 `dsh`（`npm i -g @deepseek-ai/dsh`）或 harness 已在 127.0.0.1:3080 运行
+
+  # ---------- 附加资产：H5 静态包 + 插件 bundle（附加到同一 Release） ----------
+  web-assets:
+    name: Build & attach H5 / plugins assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build H5
+        run: pnpm --filter @dsh-ui/mobile-h5 build
+
+      - name: Archive H5 dist
+        run: (cd apps/mobile-h5 && tar -czf /tmp/mobile-h5-dist.tar.gz dist)
+
+      - name: Package plugins
+        run: |
+          mkdir -p /tmp/dist-plugins
+          for d in plugins/*/; do
+            name=$(basename "$d")
+            tar --exclude=node_modules -czf "/tmp/dist-plugins/$name.tgz" -C "$d" .
+          done
+
+      - name: Attach assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            /tmp/mobile-h5-dist.tar.gz
+            /tmp/dist-plugins/*.tgz

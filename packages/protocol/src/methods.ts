@@ -43,6 +43,11 @@ export interface SettingsNamespaceView {
   applies: "session" | "workspace" | "host" | (string & {});
 }
 
+/** 会话消息内容块（当前 harness session.prompt 载荷）。 */
+export type PromptContentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; mediaType: string; data: string; name?: string };
+
 /** Content block inside a message (text / reasoning / tool-result / …). */
 export interface ContentBlock {
   type: string;
@@ -105,12 +110,20 @@ export interface Methods {
   "host.describe": { payload: Record<string, never>; value: HostDescribeValue };
   // ---- session ----
   "session.list": { payload: Record<string, never> | { workspaceId?: string }; value: { items: SessionSummary[] } };
-  "session.create": { payload: { workspaceId?: string; cwd?: string; agentPreset?: string; prompt?: string }; value: { sessionId: string } };
-  "session.prompt": { payload: { sessionId: string; prompt: string }; value: unknown };
+  "session.create": { payload: { workspaceId?: string; cwd?: string; sessionId?: string; agentPreset?: string }; value: { sessionId: string; agentPreset?: string } };
+  // 当前 harness：content 为内容块数组，mode=queue（排队）| steer（打断当前回合）
+  "session.prompt": {
+    payload: { sessionId: string; mode: "queue" | "steer"; content: PromptContentPart[]; clientTimeZone?: string };
+    value: { accepted: true; command?: { kind: "success"; text?: string } };
+  };
   "session.cancel": { payload: { sessionId: string }; value: { accepted: true } };
   "session.rename": { payload: { sessionId: string; title: string }; value: unknown };
-  // 注意：实测 limit/afterSeq 当前被服务端忽略，返回固定尾部窗口（~4 万条），客户端自行截断
-  "session.history": { payload: { sessionId: string; afterSeq?: number; limit?: number }; value: { events: SessionHistoryEvent[] } };
+  // 当前 harness（0.1.0-rc.6 之后）支持 maxMessages/beforeSeq 分页（按消息数取尾部窗口，返回 hasMore）；
+  // limit/afterSeq 为旧版兼容字段（部分版本被忽略）。移动端应使用 maxMessages 限制传输量。
+  "session.history": {
+    payload: { sessionId: string; afterSeq?: number; limit?: number; beforeSeq?: number; maxMessages?: number };
+    value: { events: SessionHistoryEvent[]; hasMore: boolean; projections?: unknown };
+  };
   "session.search": { payload: { query: string }; value: unknown };
   "session.fork": { payload: { sessionId: string }; value: unknown };
   "session.attachment": { payload: Record<string, unknown>; value: unknown };

@@ -8,7 +8,10 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "typecheck": "turbo run typecheck",
-    "smoke": "pnpm --filter @dsh-ui/protocol smoke"
+    "smoke": "pnpm --filter @dsh-ui/protocol smoke",
+    "test": "turbo run test",
+    "plugins:install": "node scripts/install-plugins.mjs",
+    "plugins:remove": "node scripts/install-plugins.mjs --remove"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

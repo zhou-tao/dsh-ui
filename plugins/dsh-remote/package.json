@@ -1,0 +1,22 @@
+{
+  "name": "dsh-remote",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "dsh 手机互联（H5 远程互联）客户端插件：侧边栏手机图标 + 扫码弹窗 + 连接状态绿点",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  }
+}

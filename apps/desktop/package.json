@@ -6,7 +6,7 @@
   "description": "DeepSeek Harness desktop shell (Tauri 2). Spawns the harness web profile and hosts its UI in a native window.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && mkdir -p src-tauri/resources && cp ../mobile-h5/dist-server/index.js src-tauri/resources/mobile-bridge.js",
+    "build": "tsc --noEmit && vite build && node -e \"require('fs').copyFileSync('../mobile-h5/dist-server/index.js','src-tauri/resources/mobile-bridge.js')\"",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

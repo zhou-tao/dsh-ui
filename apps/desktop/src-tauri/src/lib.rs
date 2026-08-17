@@ -14,80 +14,61 @@ const HARNESS_URL: &str = "http://127.0.0.1:3080";
 const BOOT_TIMEOUT: Duration = Duration::from_secs(10);
 const BRIDGE_PORT: u16 = 4173;
 
-/// 注入到 harness 页面的手机图标：浮动在设置按钮右侧上层（SVG smartphone-line + 状态绿点）。
-/// 点击触发通道：__TAURI_INTERNALS__.invoke → dshui:// 自定义协议 → alert 兜底。
-const INJECT_JS: &str = r#"(() => {
-  if (document.getElementById('dsh-phone-fab')) return;
-  const fab = document.createElement('div');
-  fab.id = 'dsh-phone-fab';
-  fab.title = '手机互联（扫码连接）';
-  fab.setAttribute('aria-label', '手机互联');
-  fab.style.cssText = 'position:fixed;z-index:2147483000;width:32px;height:32px;border-radius:50%;background:#3d7eff;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:auto;user-select:none;';
-  fab.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none"><path fill="currentColor" d="M7 4v16h10V4zM6 2h12a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1m6 15a1 1 0 1 1 0 2a1 1 0 0 1 0-2"/></svg>';
-  const dot = document.createElement('span');
-  dot.id = 'dsh-phone-dot';
-  dot.style.cssText = 'position:absolute;top:0;right:0;width:9px;height:9px;border-radius:50%;border:2px solid #fff;background:#8b949e;';
-  fab.appendChild(dot);
-  const place = () => {
-    const area = document.querySelector('.hHd-Xa_settingsArea, [class*="settingsArea"]');
-    let btn = null;
-    if (area) {
-      const btns = area.querySelectorAll('button, [role="button"]');
-      for (const b of btns) {
-        const a = (b.getAttribute('aria-label') || '') + (b.getAttribute('title') || '') + (b.textContent || '');
-        if (/设置|settings/i.test(a)) { btn = b; break; }
-      }
-      if (!btn && btns.length) btn = btns[btns.length - 1];
+/// Finder/Dock 启动的 GUI app 其 PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin，
+/// `Command::new("node")` 会直接 ENOENT —— 必须用绝对路径解析 node。
+fn resolve_node() -> String {
+    if let Ok(p) = std::env::var("DSH_UI_NODE") {
+        if !p.trim().is_empty() && std::path::Path::new(p.trim()).exists() {
+            return p.trim().to_string();
+        }
     }
-    const anchor = btn ?? area;
-    if (!anchor) return false;
-    const r = anchor.getBoundingClientRect();
-    fab.style.position = 'fixed';
-    fab.style.left = (r.right + 6) + 'px';
-    fab.style.top = (r.top + r.height / 2 - 16) + 'px';
-    fab.style.zIndex = '2147483000';
-    fab.style.bottom = 'auto';
-    if (!document.body.contains(fab)) document.body.appendChild(fab);
-    return true;
-  };
-  let tries = 0;
-  const timer = setInterval(() => { if (place() || ++tries > 30) clearInterval(timer); }, 500);
-  let mo = null;
-  try {
-    mo = new MutationObserver(() => place());
-    mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
-  } catch (e) { /* ignore */ }
-  window.addEventListener('resize', place);
-  setTimeout(place, 800);
-  setTimeout(place, 3000);
-  const setDot = (ok) => { dot.style.background = ok ? '#56d364' : '#ff5f56'; };
-  const ping = () => {
-    try {
-      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
-        window.__TAURI_INTERNALS__.invoke('bridge_running').then(setDot).catch(() => setDot(false));
-      } else setDot(false);
-    } catch { setDot(false); }
-  };
-  ping();
-  setInterval(ping, 5000);
-  const open = () => {
-    try {
-      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
-        window.__TAURI_INTERNALS__.invoke('open_mobile_qr').catch(() => {
-          try { location.href = 'dshui://open-mobile-qr'; } catch (e2) { alert('手机互联：' + e2.message); }
-        });
-        return;
-      }
-      try { location.href = 'dshui://open-mobile-qr'; }
-      catch (e) { alert('手机互联：请从桌面端菜单/托盘打开扫码窗口'); }
-    } catch (e) {
-      try { location.href = 'dshui://open-mobile-qr'; } catch (e2) { alert('手机互联：' + e.message); }
+    for cand in ["/usr/local/bin/node", "/opt/homebrew/bin/node", "/usr/bin/node"] {
+        if std::path::Path::new(cand).exists() {
+            return cand.to_string();
+        }
     }
-  };
-  fab.addEventListener('click', open);
-  fab.addEventListener('touchend', (e) => { e.preventDefault(); open(); });
-})();"#;
+    "node".to_string() // 开发环境 PATH 兜底
+}
 
+/// 子进程 PATH：保证 node / cloudflared / npx 等外部命令可解析（覆盖 Finder 启动的极简 PATH）。
+const CHILD_PATH: &str = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+
+fn on_path(name: &str) -> bool {
+    Command::new("/usr/bin/which")
+        .arg(name)
+        .env("PATH", CHILD_PATH)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// 解析 dsh 启动方式：PATH 上的 dsh → npx @deepseek-ai/dsh（本机经 npx 缓存运行）→ 常见绝对路径。
+fn resolve_dsh() -> String {
+    if let Ok(p) = std::env::var("DSH_UI_DSH") {
+        if !p.trim().is_empty() {
+            return p.trim().to_string();
+        }
+    }
+    if on_path("dsh") {
+        return "dsh".to_string();
+    }
+    if on_path("npx") {
+        return "npx".to_string();
+    }
+    for cand in ["/usr/local/bin/dsh", "/opt/homebrew/bin/dsh"] {
+        if std::path::Path::new(cand).exists() {
+            return cand.to_string();
+        }
+    }
+    "dsh".to_string()
+}
+
+/// 注入到 harness 页面的手机互联脚本（resources/inject.js）：
+/// 1) 悬浮图标（FAB）：位于侧边栏设置按钮左侧 100px、无圆形蓝底、右上角小圆点默认隐藏、手机已连接时绿色；
+/// 2) 手机互联 UI 层弹窗（替代原系统级独立窗口）：扫码连接（局域网 / 公网隧道）。
+const INJECT_JS: &str = include_str!("../resources/inject.js");
 
 pub struct HarnessState(pub Mutex<Option<Child>>);
 pub struct BridgeState(pub Mutex<Option<Child>>);
@@ -125,7 +106,7 @@ fn navigate_to_harness(app: &tauri::AppHandle) -> Result<(), String> {
         .parse::<tauri::Url>()
         .map_err(|e| format!("bad harness url {HARNESS_URL}: {e}"))?;
     win.navigate(target).map_err(|e| format!("navigate failed: {e}"))?;
-    // 页面加载后注入左下角手机图标（注入脚本自带重试，覆盖加载时序）
+    // 页面加载后注入手机互联脚本（悬浮图标 + UI 层弹窗；脚本自带重试，覆盖加载时序）
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(1200));
         let _ = win.eval(INJECT_JS);
@@ -156,8 +137,11 @@ fn start_bridge(app: tauri::AppHandle, state: State<'_, BridgeState>) -> Result<
     if bridge_listening() {
         return Ok(true);
     }
+    // Tauri v2 打包后资源位于 <bundle>/Contents/Resources/resources/mobile-bridge.js（保留配置相对路径），
+    // 部分环境也可能平铺在 Resources/ 下，两种情况都探测。
     let candidates = [
         std::env::var("DSH_UI_MOBILE_SERVER").ok(),
+        app.path().resource_dir().ok().map(|d| d.join("resources/mobile-bridge.js").to_string_lossy().to_string()),
         app.path().resource_dir().ok().map(|d| d.join("mobile-bridge.js").to_string_lossy().to_string()),
         Some("../mobile-h5/dist-server/index.js".to_string()),
     ];
@@ -167,8 +151,9 @@ fn start_bridge(app: tauri::AppHandle, state: State<'_, BridgeState>) -> Result<
         .find(|p| std::path::Path::new(p).exists())
         .ok_or_else(|| "桥接脚本未找到（请先 pnpm --filter @dsh-ui/mobile-h5 build）".to_string())?;
     let script = std::fs::canonicalize(&script).map_err(|e| format!("桥接脚本无效 {script}: {e}"))?;
-    let child = Command::new("node")
+    let child = Command::new(resolve_node())
         .arg(&script)
+        .env("PATH", CHILD_PATH)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -206,13 +191,25 @@ fn do_start_harness(state: &State<'_, HarnessState>, app: &tauri::AppHandle) -> 
             url: Some(HARNESS_URL.to_string()),
         });
     }
-    let child = Command::new("dsh")
-        .args(["--profile", "web"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("failed to start dsh: {e}"))?;
+    let dsh = resolve_dsh();
+    let child = if dsh == "npx" {
+        Command::new("npx")
+            .args(["@deepseek-ai/dsh", "--profile", "web"])
+            .env("PATH", CHILD_PATH)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+    } else {
+        Command::new(&dsh)
+            .args(["--profile", "web"])
+            .env("PATH", CHILD_PATH)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+    }
+    .map_err(|e| format!("failed to start dsh: {e}"))?;
     *state.0.lock().unwrap() = Some(child);
     if !wait_for_harness(BOOT_TIMEOUT) {
         return Err(format!("harness 未在 {BOOT_TIMEOUT:?} 内就绪（{HARNESS_URL}）"));
@@ -262,16 +259,21 @@ fn open_mobile_qr_win(app: &tauri::AppHandle) {
         .build();
 }
 
-/// 供注入的悬浮图标调用（前端 invoke 只能调已注册命令）。
-#[tauri::command]
-fn open_mobile_qr(app: tauri::AppHandle) -> Result<(), String> {
-    open_mobile_qr_win(&app);
-    Ok(())
+/// 打开手机互联 UI 层弹窗：优先在 harness 主窗口内 eval 打开弹窗（UI 层弹窗，
+/// 替代原系统级独立窗口）；主窗口不可用（harness 未加载）时回退原生扫码窗口。
+fn open_mobile_qr_ui(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.eval("window.__dshPhoneModal && window.__dshPhoneModal.open()");
+        return;
+    }
+    open_mobile_qr_win(app);
 }
 
-/// 在 harness 页面注入左下角手机图标（进入界面后调用）。
-fn inject_phone_icon(win: &tauri::WebviewWindow) {
-    let _ = win.eval(INJECT_JS);
+/// 供注入的悬浮图标/菜单/托盘调用（前端 invoke 只能调已注册命令）。
+#[tauri::command]
+fn open_mobile_qr(app: tauri::AppHandle) -> Result<(), String> {
+    open_mobile_qr_ui(&app);
+    Ok(())
 }
 
 /// 启动公网隧道（代理到桥接服务 /tunnel/start，返回 {url, token} JSON）。
@@ -297,7 +299,7 @@ fn tunnel_status() -> Result<String, String> {
 /// 菜单与托盘共用的事件分发。
 fn dispatch_menu(app: &tauri::AppHandle, id: &str) {
     match id {
-        "mobile-qr" => open_mobile_qr_win(app),
+        "mobile-qr" => open_mobile_qr_ui(app),
         "open-main" => {
             let _ = navigate_to_harness(app);
         }
@@ -320,7 +322,7 @@ pub fn run() {
             TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .tooltip("DeepSeek Harness")
+                .tooltip("DeepSeek Harness UI")
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| dispatch_menu(app, event.id().as_ref()))
                 .build(app)?;
@@ -331,13 +333,20 @@ pub fn run() {
                 let state = handle.state::<HarnessState>();
                 let _ = do_start_harness(&state, &handle);
             });
+            // 启动后自动拉起手机互联连接服务（后台静默）：用户打开弹窗即出二维码，无需任何手动操作
+            let bridge_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(1500));
+                let state = bridge_handle.state::<BridgeState>();
+                let _ = start_bridge(bridge_handle.clone(), state);
+            });
             Ok(())
         })
         .on_menu_event(|app, event| dispatch_menu(app, event.id().as_ref()))
         // 注入图标的兜底触发通道：dshui://open-mobile-qr 打开扫码窗口
         .register_uri_scheme_protocol("dshui", |ctx, request| {
             if request.uri().to_string().contains("open-mobile-qr") {
-                open_mobile_qr_win(ctx.app_handle());
+                open_mobile_qr_ui(ctx.app_handle());
             }
             tauri::http::Response::builder()
                 .status(204)

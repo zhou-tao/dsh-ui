@@ -1,0 +1,92 @@
+name: Deploy
+
+# 部署：main 推送或手动触发时全量构建并归档产物；
+# 可选输入 publish-pages 把 mobile-h5 静态壳部署到 GitHub Pages（仅 UI 预览，
+# 无 API 桥接，需仓库启用 Pages 且 source=GitHub Actions）。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish-pages:
+        description: '部署 mobile-h5 静态壳到 GitHub Pages（仅 UI 预览，API 不可用）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Package plugins (dsh-deep-ui / dsh-remote)
+        run: |
+          mkdir -p dist-plugins
+          for d in plugins/*/; do
+            name=$(basename "$d")
+            tar --exclude=node_modules -czf "dist-plugins/$name.tgz" -C "$d" .
+          done
+          ls -la dist-plugins
+
+      - name: Archive H5 dist
+        run: |
+          mkdir -p artifacts
+          (cd apps/mobile-h5 && tar -czf ../../artifacts/mobile-h5-dist.tar.gz dist)
+
+      - name: Upload deploy artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-ui-deploy
+          if-no-files-found: error
+          path: |
+            artifacts/mobile-h5-dist.tar.gz
+            dist-plugins/*.tgz
+            packages/protocol/dist
+            apps/tui/dist
+            apps/vscode-extension/out
+
+      - name: Upload H5 static shell for Pages preview
+        if: inputs.publish-pages == true
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/mobile-h5/dist
+
+  deploy-pages:
+    if: inputs.publish-pages == true
+    needs: build-upload
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

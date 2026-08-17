@@ -30,7 +30,7 @@ async function drawQr(url: string): Promise<void> {
 async function renderLanding(): Promise<void> {
   content.innerHTML =
     '<section class="panel">' +
-      '<h2>DeepSeek Harness 桌面端</h2>' +
+      '<h2>DeepSeek Harness UI</h2>' +
       '<p class="muted small">正在进入 harness 界面…</p>' +
     '</section>';
   try {
@@ -38,7 +38,7 @@ async function renderLanding(): Promise<void> {
   } catch (e) {
     content.innerHTML =
       '<section class="panel">' +
-        '<h2>DeepSeek Harness 桌面端</h2>' +
+        '<h2>DeepSeek Harness UI</h2>' +
         '<p class="muted small err">启动失败: ' + esc(String(e)) + '</p>' +
         '<div class="row"><button id="retry" class="primary">重试</button></div>' +
       '</section>';

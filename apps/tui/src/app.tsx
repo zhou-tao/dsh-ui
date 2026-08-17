@@ -9,6 +9,7 @@ import {
   type SessionSummary,
 } from "@dsh-ui/protocol";
 import { renderSessionEvent, truncate, type RenderLine } from "./lib";
+import { conversationItems, sessionDisplayTitle, type ConversationItem } from "@dsh-ui/protocol";
 import { Input } from "./input";
 
 interface AppProps {
@@ -19,6 +20,18 @@ type View = { kind: "list" } | { kind: "session"; sessionId: string };
 
 const MAX_LINES_PER_SESSION = 500;
 const MAX_DISPLAY_LINES = 120;
+
+
+/** ConversationItem → RenderLine（TUI 终端纯文本展示）。 */
+const itemToLine = (it: ConversationItem): RenderLine => {
+  switch (it.kind) {
+    case "user": return { text: "你: " + it.text };
+    case "ai": return { text: "AI: " + it.text };
+    case "tool": return { text: it.text, tone: "accent" };
+    case "dim": return { text: it.text, tone: "dim" };
+    case "err": return { text: it.text, tone: "err" };
+  }
+};
 
 const toneColor = (tone?: string): string | undefined =>
   tone === "dim" ? "#8b949e" : tone === "ok" ? "#56d364" : tone === "err" ? "#ff7b72" : tone === "accent" ? "#79c0ff" : undefined;
@@ -169,15 +182,14 @@ export function App({ baseUrl }: AppProps): React.JSX.Element {
     setPrompt("");
     setSending(false);
     try {
-      const h = await clientRef.current.call("session.history", { sessionId });
+      const h = await clientRef.current.call("session.history", { sessionId, maxMessages: 60 });
       const evs = h.events;
-      const rendered: RenderLine[] = [];
       let max = -1;
-      for (const item of evs.slice(-300)) {
+      for (const item of evs) {
         const e = item.event;
         if (typeof e.seq === "number") max = Math.max(max, e.seq);
-        rendered.push(...renderSessionEvent(e));
       }
+      const rendered = conversationItems(evs.map((it) => it.event), { max: 300 }).map(itemToLine);
       setMaxSeq((p) => ({ ...p, [sessionId]: Math.max(p[sessionId] ?? -1, max) }));
       setLines((p) => ({ ...p, [sessionId]: rendered }));
       setError(null);
@@ -194,7 +206,11 @@ export function App({ baseUrl }: AppProps): React.JSX.Element {
     setSending(true);
     try {
       appendLines(v.sessionId, [{ text: "你: " + truncate(text, 240) }]);
-      await clientRef.current.call("session.prompt", { sessionId: v.sessionId, prompt: text });
+      await clientRef.current.call("session.prompt", {
+        sessionId: v.sessionId,
+        mode: "queue",
+        content: [{ type: "text", text }],
+      });
     } catch (err) {
       appendLines(v.sessionId, [{ text: "发送失败: " + (err instanceof Error ? err.message : String(err)), tone: "err" }]);
     } finally {
@@ -236,7 +252,7 @@ export function App({ baseUrl }: AppProps): React.JSX.Element {
     return (
       <Box flexDirection="column" padding={1}>
         <Box justifyContent="space-between">
-          <Text bold color="cyan">会话 {view.sessionId.slice(0, 8)}</Text>
+          <Text bold color="cyan">{truncate(sessionDisplayTitle(sessionsRef.current.find((x) => x.sessionId === view.sessionId) as SessionSummary), 40)}</Text>
           <Text dimColor>{meta ? (meta.running ? "● running" : "○ idle") : ""} · {meta?.cwd ?? ""}</Text>
         </Box>
         <Box flexDirection="column" marginTop={1}>
@@ -289,7 +305,8 @@ export function App({ baseUrl }: AppProps): React.JSX.Element {
         {sessions.length === 0 && !loading ? <Text dimColor>  (empty)</Text> : null}
         {sessions.map((s, i) => (
           <Text key={s.sessionId} color={i === selected ? "#79c0ff" : undefined}>
-            {i === selected ? "> " : "  "}{s.running ? "●" : "○"} {s.sessionId.slice(0, 8)}  
+            {i === selected ? "> " : "  "}{s.running ? "● " : "○ "}
+            {truncate(sessionDisplayTitle(s), 40)}{"  "}
             {s.running ? <Text color="#56d364">running</Text> : <Text dimColor>idle</Text>}
             {s.cwd ? <Text dimColor>  {s.cwd}</Text> : null}
           </Text>

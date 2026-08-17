@@ -1,14 +1,26 @@
 {
   "name": "@dsh-ui/tui",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "DeepSeek Harness TUI client (Ink v7): terminal console for the harness API",
-  "keywords": ["deepseek", "harness", "tui", "cli", "ink"],
+  "keywords": [
+    "deepseek",
+    "harness",
+    "tui",
+    "cli",
+    "ink"
+  ],
   "license": "MIT",
-  "bin": { "dsh-tui": "./dist/index.js" },
-  "files": ["dist", "README.md"],
-  "engines": { "node": ">=22" },
+  "bin": {
+    "dsh-tui": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx src/index.tsx",
     "build": "tsup",

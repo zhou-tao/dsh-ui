@@ -2,8 +2,7 @@
 import { render } from "ink";
 import { parseArgs } from "node:util";
 import { App } from "./app";
-import { HarnessClient } from "@dsh-ui/protocol";
-import { renderSessionEvent } from "./lib";
+import { HarnessClient, conversationItems } from "@dsh-ui/protocol";
 
 const { values, positionals } = parseArgs({
   options: {
@@ -34,10 +33,8 @@ async function printOnce(baseUrl: string, sessionId?: string): Promise<void> {
   if (sessionId) {
     console.log("");
     console.log("=== session " + sessionId + " (历史尾部，已渲染) ===");
-    const h = await client.call("session.history", { sessionId });
-    for (const item of h.events.slice(-80)) {
-      for (const ln of renderSessionEvent(item.event)) console.log(ln.text);
-    }
+    const h = await client.call("session.history", { sessionId, maxMessages: 60 });
+    for (const it of conversationItems(h.events.map((x) => x.event), { max: 80 })) console.log(it.text);
   }
 }
 

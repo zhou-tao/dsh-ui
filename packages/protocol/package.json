@@ -18,7 +18,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "smoke": "node --experimental-strip-types examples/smoke.ts"
+    "smoke": "node --experimental-strip-types examples/smoke.ts",
+    "test": "node examples/format-test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

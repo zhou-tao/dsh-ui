@@ -1,0 +1,99 @@
+name: CI
+
+# 自动化测试：安装 → 类型检查 → 单元测试 → 全量构建 → 插件 bundle 校验 → 上传构建产物
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test (protocol 渲染/分组单测)
+        run: pnpm test
+
+      - name: Build all packages (protocol → tui → mobile-h5 → desktop → vscode-extension)
+        run: pnpm build
+
+      - name: Verify TUI bundle is self-contained (protocol inlined)
+        run: |
+          test -f apps/tui/dist/index.js
+          if grep -q 'from "@dsh-ui/protocol"' apps/tui/dist/index.js; then
+            echo "::error::TUI bundle still imports @dsh-ui/protocol externally; publish would break"
+            exit 1
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-ubuntu
+          if-no-files-found: warn
+          path: |
+            packages/protocol/dist
+            apps/tui/dist
+            apps/mobile-h5/dist
+            apps/mobile-h5/dist-server
+            apps/desktop/dist
+            apps/vscode-extension/out
+
+  # ---------- 插件（dsh-deep-ui / dsh-remote）bundle 校验 ----------
+  plugins-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Syntax-check plugin client bundles
+        run: |
+          for f in plugins/*/lib/client.js; do
+            echo "check $f"
+            node --check "$f" || exit 1
+          done
+
+      - name: Validate plugin package manifests (dsh.client + exports[./client])
+        run: |
+          node -e '
+            const fs = require("fs");
+            const dirs = fs.readdirSync("plugins").filter(d => fs.existsSync("plugins/"+d+"/package.json"));
+            if (dirs.length === 0) throw new Error("no plugins found");
+            for (const d of dirs) {
+              const p = JSON.parse(fs.readFileSync("plugins/"+d+"/package.json", "utf8"));
+              if (!p.exports || !p.exports["./client"]) throw new Error(d + ": missing exports[./client]");
+              if (!p.dsh || !p.dsh.client) throw new Error(d + ": missing dsh.client declaration");
+              if (!fs.existsSync("plugins/"+d+"/lib/client.js")) throw new Error(d + ": missing lib/client.js");
+              console.log("OK", d, "v" + p.version, "platform=" + (p.dsh.client.platform || "web"));
+            }
+          '
