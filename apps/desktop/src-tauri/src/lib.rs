@@ -5,6 +5,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
 
 const HARNESS_HOST: &str = "127.0.0.1";
@@ -175,6 +176,18 @@ fn open_mobile_qr(app: &tauri::AppHandle) {
         .build();
 }
 
+/// 菜单与托盘共用的事件分发。
+fn dispatch_menu(app: &tauri::AppHandle, id: &str) {
+    match id {
+        "mobile-qr" => open_mobile_qr(app),
+        "open-main" => {
+            let _ = navigate_to_harness(app);
+        }
+        "quit" => app.exit(0),
+        _ => {}
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(HarnessState(Mutex::new(None)))
@@ -182,17 +195,20 @@ pub fn run() {
         .setup(|app| {
             let open_main = MenuItem::with_id(app, "open-main", "打开主界面", true, None::<&str>)?;
             let mobile = MenuItem::with_id(app, "mobile-qr", "手机互联（扫码访问）", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open_main, &mobile])?;
-            app.set_menu(menu)?;
+            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open_main, &mobile, &quit])?;
+            app.set_menu(menu.clone())?;
+            // 系统托盘：菜单栏常驻入口，更醒目
+            TrayIconBuilder::with_id("main-tray")
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .tooltip("DeepSeek Harness")
+                .show_menu_on_left_click(true)
+                .on_menu_event(|app, event| dispatch_menu(app, event.id().as_ref()))
+                .build(app)?;
             Ok(())
         })
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "mobile-qr" => open_mobile_qr(app),
-            "open-main" => {
-                let _ = navigate_to_harness(app);
-            }
-            _ => {}
-        })
+        .on_menu_event(|app, event| dispatch_menu(app, event.id().as_ref()))
         .invoke_handler(tauri::generate_handler![
             harness_status,
             start_harness,
@@ -211,3 +227,4 @@ pub fn run() {
             }
         });
 }
+
