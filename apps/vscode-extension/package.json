@@ -1,0 +1,45 @@
+{
+  "name": "dsh-ui-extension",
+  "displayName": "DeepSeek Harness UI",
+  "description": "DeepSeek Harness 的 VS Code 客户端：管理 harness 进程并在面板中提供 UI 桥",
+  "version": "0.1.0",
+  "publisher": "deepseek-ai",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "dsh-ui.open",
+        "title": "DeepSeek Harness: Open UI"
+      },
+      {
+        "command": "dsh-ui.stop",
+        "title": "DeepSeek Harness: Stop Harness"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "pnpm run compile",
+    "typecheck": "tsc -p ./ --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "@dsh-ui/protocol": "workspace:*"
+  }
+}

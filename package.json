@@ -1,0 +1,17 @@
+{
+  "name": "dsh-ui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "deepseek-harness UI layer: Tauri desktop app + VS Code extension (monorepo)",
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "typecheck": "turbo run typecheck",
+    "smoke": "pnpm --filter @dsh-ui/protocol smoke"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{NONCE}}'; img-src {{CSP_SOURCE}} data:;" />
+  <style>
+    body { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; background: #0b1220; color: #e6edf3; padding: 16px; }
+    h1 { font-size: 15px; margin: 0 0 4px; }
+    .row { display: flex; gap: 8px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
+    button { background: #3d7eff; color: #fff; border: 0; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; }
+    .muted { color: #8b949e; font-size: 12px; margin: 0; }
+    #out { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; white-space: pre-wrap; color: #9ecbff; line-height: 1.5; }
+    .err { color: #ff7b72; }
+  </style>
+</head>
+<body>
+  <h1>DeepSeek Harness</h1>
+  <p class="muted">harness: {{BASE_URL}}</p>
+  <div class="row">
+    <button id="probe">host.describe</button>
+    <button id="sessions">session.list</button>
+    <button id="open">在浏览器打开完整界面</button>
+  </div>
+  <div id="out">等待操作…</div>
+  <script nonce="{{NONCE}}">
+    const vscode = acquireVsCodeApi();
+    let seq = 0;
+    const out = document.getElementById('out');
+    function api(method, payload) {
+      const reqId = String(++seq);
+      out.textContent = '→ ' + method + ' …';
+      out.className = '';
+      vscode.postMessage({ type: 'api', reqId, method, payload: payload || {} });
+      return new Promise((resolve, reject) => {
+        const handler = (event) => {
+          const msg = event.data;
+          if (msg && msg.type === 'api-result' && msg.reqId === reqId) {
+            window.removeEventListener('message', handler);
+            msg.ok ? resolve(msg.value) : reject(new Error(msg.error));
+          }
+        };
+        window.addEventListener('message', handler);
+      });
+    }
+    function show(value) { out.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2); out.className = ''; }
+    function fail(e) { out.textContent = 'ERROR: ' + e.message; out.className = 'err'; }
+    document.getElementById('probe').onclick = async () => {
+      try { show(await api('host.describe', {})); } catch (e) { fail(e); }
+    };
+    document.getElementById('sessions').onclick = async () => {
+      try {
+        const r = await api('session.list', {});
+        show((r.items || []).map(s => s.sessionId + '  running=' + s.running).join('\n') || '(empty)');
+      } catch (e) { fail(e); }
+    };
+    document.getElementById('open').onclick = () => vscode.postMessage({ type: 'open-external' });
+  </script>
+</body>
+</html>

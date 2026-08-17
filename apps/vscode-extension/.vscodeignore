@@ -1,0 +1,9 @@
+src/**
+node_modules/**
+out/test/**
+.vscode/**
+tsconfig.json
+**/*.map
+!out/extension.js
+!out/harness.js
+!out/webview.js

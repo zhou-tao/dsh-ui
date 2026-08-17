@@ -1,0 +1,22 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+out/
+target/
+*.tsbuildinfo
+
+# turbo
+.turbo/
+
+# tauri sidecar binaries (built per-platform)
+src-tauri/binaries/
+
+# logs & local state
+*.log
+.DS_Store
+
+# vscode extension packaging
+*.vsix
