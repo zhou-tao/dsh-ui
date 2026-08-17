@@ -71,15 +71,23 @@ jobs:
             apps/tui/dist
             apps/vscode-extension/out
 
+  # 仅在 publish-pages=true 时运行：H5 静态壳作为 Pages artifact 上传
+  pages-upload:
+    if: inputs.publish-pages == true
+    needs: build-upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Upload H5 static shell for Pages preview
-        if: inputs.publish-pages == true
         uses: actions/upload-pages-artifact@v3
         with:
           path: apps/mobile-h5/dist
 
   deploy-pages:
     if: inputs.publish-pages == true
-    needs: build-upload
+    needs: pages-upload
     runs-on: ubuntu-latest
     environment:
       name: github-pages
