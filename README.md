@@ -91,15 +91,16 @@ dsh-ui/
 4. 骨架已支持 `--once` 无 TTY 模式（CI/管道可跑），交互模式需要真实终端。
 
 ### 4.3 后续路线（TUI）
-- [ ] 会话视图：进入选中 session，轮询 `session.history`（unary，已验证）显示消息流
-- [ ] 实时推送：用协议包 `harnessFrames` 订阅 `/api/events.mux`（WS/SSE），替换轮询；需先钉死 mux 订阅 payload 语义
+- [x] 会话视图：进入选中 session，拉取 `session.history` 尾部渲染消息流
+- [x] 实时推送：`harnessFrames` 订阅 `/api/events.mux`（实测：要求 WebSocket 升级，自动订阅全部会话，按 sessionId 过滤 + seq 去重；断线 2s 重连）
+- [x] 会话输入框：自研 Input 组件，Enter 发送 `session.prompt`（Esc 返回列表，↑/↓/PgUp/PgDn 滚动）
 - [ ] approval / question 交互：通过 `/api/respond` 回答（信封已确认）
-- [ ] 会话输入框：`session.prompt` / `session.create` 发消息
+- [ ] 会话搜索 / 创建新会话（`session.create`）
 
 ## 5. 当前状态
 - ✅ protocol 包：构建通过，冒烟测试对活服务器真实返回（host.describe / session.list / workspace.list）
 - ✅ VSCode 扩展：tsc 编译通过（`pnpm --filter dsh-ui-extension compile`）
-- ✅ TUI：tsup 构建通过，`--once`/无 TTY 模式对活服务器实测返回（host/session/workspace）；交互模式需真实终端
+- ✅ TUI：tsup 构建通过；无 TTY 模式实测返回（`--once` 列表 / `--once -- --session <id>` 历史渲染）；PTY 冒烟渲染正常；交互模式需真实终端
 - ✅ 桌面前端：vite 构建通过；Rust 侧已写好（进程管理+窗口导航），**本机缺 Rust 工具链，未编译验证**
 - ⚠️ 桌面端下一步：安装 Rust（rustup），`pnpm --filter @dsh-ui/desktop tauri:dev` 首次编译验证；
   生产打包前 `pnpm tauri:icon` 生成 icns/ico，并把 harness 打包为 sidecar 二进制（externalBin）
