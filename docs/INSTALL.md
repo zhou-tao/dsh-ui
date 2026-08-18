@@ -85,7 +85,13 @@ pnpm start        # 默认 4173 端口，监听 0.0.0.0
 
 ## 3.5 dsh 插件（plugins/）
 
-通用能力插件（装进 harness profile 即生效）：
+通用能力插件（装进 harness profile 即生效）。
+
+**桌面端自动安装**：DeepSeek Harness UI 启动时会自动把 `plugins/` 下的插件装进
+`~/.dsh/profiles/web`（写入 cordis.patch.yml + package.json 依赖 + node_modules 链接），无需手动操作；
+首次运行（profile 刚创建）会自动重启一次 harness 使其生效。插件随桌面端打包（resources/plugins/*），release 版同样生效。
+
+手动安装（CLI 场景，如 TUI）：
 ```bash
 cd dsh-ui
 pnpm plugins:install   # 安装 dsh-deep-ui（会话折叠）+ dsh-remote（手机互联）到 ~/.dsh/profiles/web

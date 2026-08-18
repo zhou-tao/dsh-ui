@@ -187,7 +187,7 @@ jobs:
             - **VS Code 扩展**：`dsh-ui-extension-<tag>.vsix`（Marketplace 或手动安装）
             - **H5 手机页**：`mobile-h5-dist.tar.gz`（解压后由桥接服务托管）
             - **TUI**：`dsh-tui-macos-arm64` / `dsh-tui-macos-x64` / `dsh-tui-windows-x64.exe` / `dsh-tui-linux-x64`（独立可执行文件，免装 node；npm 用户也可 `npm i -g @dsh-ui/tui`）
-            - **插件**：`dsh-deep-ui.tgz` / `dsh-remote.tgz`（`pnpm plugins:install` 安装）
+            - **插件**：桌面端已随包内置并**启动时自动安装**到 harness profile；`dsh-deep-ui.tgz` / `dsh-remote.tgz` 供 CLI（TUI 等）场景 `pnpm plugins:install` 手动安装
             - 未签名构建：macOS 首次打开请右键 → 打开；Windows 见 SmartScreen 提示
             - 需要本机已安装 `dsh`（`npm i -g @deepseek-ai/dsh`）或 harness 已在 127.0.0.1:3080 运行
 

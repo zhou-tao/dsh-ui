@@ -56,6 +56,7 @@
       borderRadius: '50%', // 圆形：hover 高亮区域为圆形
       userSelect: 'none',
       pointerEvents: 'auto',
+      visibility: 'hidden', // 未定位到侧边栏设置区前保持隐藏：避免以静态位置错位悬浮到错误弹窗中央（macOS 复现）
       transition: 'background .12s ease, transform .12s ease, opacity .12s ease',
     },
   });
@@ -92,11 +93,18 @@
       if (!btn && btns.length) btn = btns[btns.length - 1];
     }
     const anchor = btn ?? area;
-    if (!anchor || !document.body.contains(fab)) {
-      if (!document.body.contains(fab)) document.body.appendChild(fab);
-      return;
+    if (!document.body.contains(fab)) document.body.appendChild(fab);
+    // 未找到侧边栏设置区（启动错误弹窗/加载中）：保持隐藏，避免图标以静态位置悬浮到弹窗中央
+    if (!anchor) {
+      fab.style.visibility = 'hidden';
+      return false;
     }
     const r = anchor.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) {
+      // 锚点无实际布局（隐藏/折叠）：同样保持隐藏
+      fab.style.visibility = 'hidden';
+      return false;
+    }
     const areaRect = area ? area.getBoundingClientRect() : null;
     const S = 28;
     if (areaRect) {
@@ -109,6 +117,8 @@
     fab.style.top = (r.top + r.height / 2 - S / 2) + 'px';
     fab.style.bottom = 'auto';
     fab.style.position = 'fixed';
+    fab.style.visibility = 'visible';
+    return true;
   }
   fab.addEventListener('mouseenter', () => { fab.style.transform = 'scale(1.08)'; fab.style.background = 'rgba(255,255,255,.09)'; });
   fab.addEventListener('mouseleave', () => { fab.style.transform = 'scale(1)'; fab.style.background = 'transparent'; });

@@ -105,6 +105,13 @@ dsh-ui/
 | **dsh-remote** | 手机互联入口：侧边栏手机图标 + UI 弹窗（同 Wi-Fi 扫码）、连接状态绿点、二维码自动加载 |
 
 ### 安装 / 卸载（装进 harness profile）
+
+**桌面端 DeepSeek Harness UI 启动时自动安装**（幂等）：应用启动/拉起 harness 前会自动把
+`plugins/` 下的插件装进 `~/.dsh/profiles/web`（写入 `cordis.patch.yml` + `package.json` 依赖 +
+`node_modules` 链接），无需手动操作；首次运行（profile 刚创建）会补装并自动重启一次 harness 使其生效。
+插件源码已随桌面端打包进 bundle（`resources/plugins/*`），release 版同样生效。
+
+手动安装 / 卸载（CLI 场景，如 TUI）：
 ```bash
 pnpm plugins:install            # 写入 ~/.dsh/profiles/web 的 cordis.patch.yml + 依赖并 pnpm install
 # 重启 harness（或重启桌面端 DeepSeek Harness UI）后生效
@@ -113,6 +120,7 @@ pnpm plugins:install --remove   # 卸载
 
 > 插件结构：每个插件是 npm 包（`dsh.client` 声明 + `exports["./client"]` 的 ModuleLoader bundle + 空 node 半身）。
 > 桌面端内置注入（inject.js）与 dsh-remote 以 `window.__dshPhoneInject` 互斥，装插件后由插件接管。
+> 自动安装后如需改回手动管理，先 `pnpm plugins:install --remove` 再重启桌面端即可。
 
 ---
 ## 🚀 发布（CI/CD）
