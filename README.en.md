@@ -52,7 +52,19 @@ pnpm --filter @dsh-ui/desktop tauri:dev    # dev mode
 pnpm --filter @dsh-ui/desktop tauri:build  # package (.dmg / .msi / .exe)
 ```
 - macOS: `DeepSeek Harness UI.app` (builds for both Apple Silicon and Intel); Windows: `.msi` / `.exe`
-- Release builds are available from **GitHub Releases**; for unsigned builds right-click → Open on first launch
+- Release builds are available from **GitHub Releases**
+
+> **macOS says "app is damaged" on first launch?** That is Gatekeeper's normal block for unsigned builds (misleading wording — the file itself is not corrupted). Pick one:
+>
+> ```bash
+> # Option 1: remove the quarantine flag, then open normally (recommended)
+> xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness UI.app"
+> open "/Applications/DeepSeek Harness UI.app"
+>
+> # Option 2: right-click the app → Open → click "Open" again
+> ```
+>
+> Windows SmartScreen works the same way: click "More info" → "Run anyway".
 
 ### 2) Mobile Companion H5
 ```bash

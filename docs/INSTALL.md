@@ -52,8 +52,19 @@ pnpm tauri:build
 #   src-tauri/target/release/bundle/macos/dsh-ui.app
 #   src-tauri/target/release/bundle/dmg/dsh-ui_0.1.0_aarch64.dmg
 ```
-双击 `.dmg` 安装（把 `dsh-ui.app` 拖入 Applications）。
-> 未签名构建：首次打开如被 Gatekeeper 拦截，右键 → 打开，或 `xattr -dr com.apple.quarantine /Applications/dsh-ui.app`。
+双击 `.dmg` 安装（把 `DeepSeek Harness UI.app` 拖入 Applications）。
+
+> **macOS 首次打开提示"已损坏，无法打开"？** 这是 Gatekeeper 对未签名构建的正常拦截（提示措辞有误导性，文件本身没有损坏）。任选一种方式：
+>
+> ```bash
+> # 方式一：移除 quarantine 标记后正常打开（推荐）
+> xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness UI.app"
+> open "/Applications/DeepSeek Harness UI.app"
+>
+> # 方式二：右键点 app → 打开 → 再次点"打开"
+> ```
+>
+> Windows SmartScreen 提示同理：点击"更多信息" → "仍要运行"即可。
 
 ### 使用
 - 启动后显示着陆页 → 点 **进入 harness 界面**（自动连接 harness，已在运行则直接导航）

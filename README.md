@@ -52,7 +52,19 @@ pnpm --filter @dsh-ui/desktop tauri:dev    # 开发模式
 pnpm --filter @dsh-ui/desktop tauri:build  # 打包（.dmg / .msi / .exe）
 ```
 - macOS：`DeepSeek Harness UI.app`（Apple Silicon 与 Intel 均有对应构建）；Windows：`.msi` / `.exe`
-- 发布版从 **GitHub Release** 获取；未签名构建首次打开请右键 → 打开
+- 发布版从 **GitHub Release** 获取
+
+> **macOS 首次打开提示"已损坏"？** 这是 Gatekeeper 对未签名构建的正常拦截（提示措辞有误导性，文件本身没有损坏）。任选一种方式打开：
+>
+> ```bash
+> # 方式一：移除 quarantine 标记后正常打开（推荐）
+> xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness UI.app"
+> open "/Applications/DeepSeek Harness UI.app"
+>
+> # 方式二：右键点 app → 打开 → 再次点"打开"
+> ```
+>
+> Windows SmartScreen 提示同理：点击"更多信息" → "仍要运行"即可。
 
 ### 2) 手机互联 H5
 ```bash
