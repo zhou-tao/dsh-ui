@@ -1,5 +1,7 @@
 # dsh-ui — DeepSeek Harness UI 全家桶
 
+**[English](README.en.md) | 简体中文**
+
 为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 打造的一套 UI 客户端 monorepo：**桌面客户端**（Tauri 2）+ **终端 TUI**（Ink）+ **手机互联 H5** + **VS Code 扩展**，全部复用同一套实测过的 harness 协议。
 
 > 桌面应用名：**DeepSeek Harness UI**（macOS / Windows） · TUI 包名：**@dsh-ui/tui**（npm）
@@ -21,6 +23,18 @@
 - 手机与电脑连**同一 Wi-Fi**，扫码 → 浏览会话 / 发消息；
 - 状态圆点：手机 3 分钟内访问过桥接即显示**绿色**；
 - 公网（跨 IP）互联**建设中**（原 cloudflared 隧道方案国内网络不可靠，已标记占位）。
+
+---
+
+## 🖼 界面预览
+
+| 桌面端 | 手机互联 H5（会话列表） | 手机互联 H5（会话详情） |
+| --- | --- | --- |
+| ![desktop](docs/screenshots/desktop.png) | ![mobile-h5-list](docs/screenshots/mobile-h5-list.png) | ![mobile-h5-conversation](docs/screenshots/mobile-h5-conversation.png) |
+
+| TUI（会话列表） | TUI（会话详情） | VS Code 扩展 |
+| --- | --- | --- |
+| ![tui-list](docs/screenshots/tui-list.png) | ![tui-conversation](docs/screenshots/tui-conversation.png) | ![vscode](docs/screenshots/vscode-extension.png) |
 
 ---
 
@@ -133,7 +147,7 @@ pnpm plugins:install --remove   # 卸载
   - TUI 自动发布 **npm**（`@dsh-ui/tui`，需 `NPM_TOKEN` secret）
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0   # 触发发布
+git tag v0.1.1 && git push origin v0.1.1   # 触发发布
 ```
 
 ---
