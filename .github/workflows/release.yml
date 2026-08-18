@@ -98,7 +98,7 @@ jobs:
           - os: macos-14
             target: bun-darwin-arm64
             out: dsh-tui-macos-arm64
-          - os: macos-13
+          - os: macos-15-intel
             target: bun-darwin-x64
             out: dsh-tui-macos-x64
           - os: windows-latest
@@ -149,7 +149,7 @@ jobs:
       matrix:
         include:
           - platform: macos-14      # Apple Silicon
-          - platform: macos-13      # Intel
+          - platform: macos-15-intel  # Intel
           - platform: windows-latest
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
