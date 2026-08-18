@@ -1,6 +1,6 @@
 {
   "name": "@dsh-ui/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "DeepSeek Harness desktop shell (Tauri 2). Spawns the harness web profile and hosts its UI in a native window.",

@@ -1,6 +1,6 @@
 {
   "name": "@dsh-ui/protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Shared wire protocol for the deepseek-harness API: envelopes, RPC method types, event frames. Verified against the live harness web profile (v0.1.0-rc.6).",

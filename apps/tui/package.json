@@ -1,6 +1,6 @@
 {
   "name": "@dsh-ui/tui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "DeepSeek Harness TUI client (Ink v7): terminal console for the harness API",
   "keywords": [

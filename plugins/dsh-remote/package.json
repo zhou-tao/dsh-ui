@@ -1,6 +1,6 @@
 {
   "name": "dsh-remote",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "dsh 手机互联（H5 远程互联）客户端插件：侧边栏手机图标 + 扫码弹窗 + 连接状态绿点",

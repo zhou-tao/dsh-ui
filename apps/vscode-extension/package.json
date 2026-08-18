@@ -2,7 +2,7 @@
   "name": "dsh-ui-extension",
   "displayName": "DeepSeek Harness UI",
   "description": "DeepSeek Harness 的 VS Code 客户端：管理 harness 进程并在面板中提供 UI 桥",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "deepseek-ai",
   "license": "MIT",
   "engines": {
