@@ -5,15 +5,29 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
 
 const HARNESS_HOST: &str = "127.0.0.1";
-const HARNESS_PORT: u16 = 3080;
-const HARNESS_URL: &str = "http://127.0.0.1:3080";
-const BOOT_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_HARNESS_PORT: u16 = 3080;
+const BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 const BRIDGE_PORT: u16 = 4173;
+
+/// harness 端口：DSH_UI_PORT 环境变量覆盖（默认 3080）。
+/// 便于端口冲突时换端口（与 README 的说明一致）。
+fn harness_port() -> u16 {
+    std::env::var("DSH_UI_PORT")
+        .ok()
+        .and_then(|p| p.trim().parse::<u16>().ok())
+        .filter(|p| *p > 0)
+        .unwrap_or(DEFAULT_HARNESS_PORT)
+}
+
+/// harness 首页地址（跟随 DSH_UI_PORT）。
+fn harness_url() -> String {
+    format!("http://{HARNESS_HOST}:{}", harness_port())
+}
 
 /// Finder/Dock 启动的 GUI app 其 PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin，
 /// `Command::new("node")` 会直接 ENOENT —— 必须用绝对路径解析 node。
@@ -147,6 +161,8 @@ fn apply_child_path(cmd: &mut Command) -> &mut Command {
 /// - Unix：直接 spawn dsh / npx。
 /// - Windows：npm 全局安装生成的是 .cmd shim，CreateProcess 不能直接执行批处理，
 ///   需经 cmd /C call 包装（保留路径引号语义，避免 cmd 引号剥离问题）。
+/// - npx 场景加 `--yes`：首次运行 npx 会提示交互确认安装（"Ok to proceed?"），
+///   GUI 内 stdin 为空会导致确认失败/挂起；`--yes` 直接放行（已装则无副作用）。
 fn spawn_harness(dsh: &str) -> std::io::Result<Child> {
     let is_npx = dsh == "npx" || dsh.ends_with("npx.cmd") || dsh.ends_with("npx.exe");
     // Windows 下非 .exe（.cmd/.bat shim 或裸命令名）都需经 cmd /C call 包装
@@ -159,13 +175,17 @@ fn spawn_harness(dsh: &str) -> std::io::Result<Child> {
         Command::new(dsh)
     };
     if is_npx {
-        cmd.arg("@deepseek-ai/dsh");
+        cmd.arg("--yes").arg("@deepseek-ai/dsh");
     }
     cmd.arg("--profile").arg("web");
+    // 端口跟随 DSH_UI_PORT（默认 3080），与 harness_listening/harness_url 保持一致
+    if harness_port() != DEFAULT_HARNESS_PORT {
+        cmd.arg("--port").arg(harness_port().to_string());
+    }
     let _ = apply_child_path(&mut cmd);
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
 }
 
@@ -358,31 +378,52 @@ pub struct HarnessStatus {
 }
 
 fn harness_listening() -> bool {
-    TcpStream::connect((HARNESS_HOST, HARNESS_PORT)).is_ok()
+    TcpStream::connect((HARNESS_HOST, harness_port())).is_ok()
 }
 
 fn bridge_listening() -> bool {
     TcpStream::connect(("127.0.0.1", BRIDGE_PORT)).is_ok()
 }
 
-fn wait_for_harness(timeout: Duration) -> bool {
+/// 等待 harness 就绪；若子进程提前退出则读取其 stderr 用于诊断。
+/// 返回 Err 时附带进程退出码与最后一段输出，便于用户/issue 排查。
+fn wait_for_harness(timeout: Duration, child: &mut Child) -> Result<(), String> {
     let start = Instant::now();
     while start.elapsed() < timeout {
         if harness_listening() {
-            return true;
+            return Ok(());
+        }
+        // 子进程提前退出（如 npx 未装成、dsh 崩溃）：读取 stderr 给出原因
+        if let Some(status) = child.try_wait().map_err(|e| format!("wait dsh failed: {e}"))? {
+            let mut buf = String::new();
+            let _ = child.stderr.take().and_then(|mut s| {
+                use std::io::Read;
+                let _ = s.read_to_string(&mut buf);
+                Some(())
+            });
+            let diag = if buf.trim().is_empty() {
+                "（无输出）".to_string()
+            } else {
+                buf.trim().lines().rev().take(12).collect::<Vec<_>>().join(" | ")
+            };
+            return Err(format!("dsh 进程提前退出（code={status}）：{diag}"));
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    harness_listening()
+    if harness_listening() {
+        Ok(())
+    } else {
+        Err(format!("harness 未在 {timeout:?} 内就绪（{}）", harness_url()))
+    }
 }
 
 fn navigate_to_harness(app: &tauri::AppHandle) -> Result<(), String> {
     let Some(win) = app.get_webview_window("main") else {
         return Err("main window not found".to_string());
     };
-    let target = HARNESS_URL
+    let target = harness_url()
         .parse::<tauri::Url>()
-        .map_err(|e| format!("bad harness url {HARNESS_URL}: {e}"))?;
+        .map_err(|e| format!("bad harness url {}: {e}", harness_url()))?;
     win.navigate(target).map_err(|e| format!("navigate failed: {e}"))?;
     // 页面加载后注入手机互联脚本（悬浮图标 + UI 层弹窗；脚本自带重试，覆盖加载时序）
     std::thread::spawn(move || {
@@ -457,7 +498,7 @@ fn harness_status(state: State<'_, HarnessState>) -> HarnessStatus {
     let running = state.0.lock().unwrap().is_some() || harness_listening();
     HarnessStatus {
         running,
-        url: running.then(|| HARNESS_URL.to_string()),
+        url: running.then(|| harness_url()),
     }
 }
 
@@ -470,14 +511,14 @@ fn do_start_harness(state: &State<'_, HarnessState>, app: &tauri::AppHandle) -> 
         navigate_to_harness(app)?;
         return Ok(HarnessStatus {
             running: true,
-            url: Some(HARNESS_URL.to_string()),
+            url: Some(harness_url()),
         });
     }
     // 启动前先确保插件已安装（profile 已存在时立即生效）
     let profile_exists = dsh_profile_dir(app).map(|d| d.exists()).unwrap_or(false);
     let installed = ensure_plugins_installed(app).unwrap_or(false);
     let dsh = resolve_dsh();
-    let child = spawn_harness(&dsh).map_err(|e| {
+    let mut child = spawn_harness(&dsh).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             format!(
                 "failed to start dsh: 未找到 dsh（{dsh}）。请先安装：npm i -g @deepseek-ai/dsh，或用环境变量 DSH_UI_DSH 指定 dsh 可执行文件路径"
@@ -486,10 +527,8 @@ fn do_start_harness(state: &State<'_, HarnessState>, app: &tauri::AppHandle) -> 
             format!("failed to start dsh: {e}")
         }
     })?;
+    wait_for_harness(BOOT_TIMEOUT, &mut child)?;
     *state.0.lock().unwrap() = Some(child);
-    if !wait_for_harness(BOOT_TIMEOUT) {
-        return Err(format!("harness 未在 {BOOT_TIMEOUT:?} 内就绪（{HARNESS_URL}）"));
-    }
     // 首次运行：profile 由本次启动创建 → 补装插件并重启一次使其生效
     if !profile_exists && !installed {
         if ensure_plugins_installed(app).unwrap_or(false) {
@@ -497,17 +536,15 @@ fn do_start_harness(state: &State<'_, HarnessState>, app: &tauri::AppHandle) -> 
                 let _ = c.kill();
                 let _ = c.wait();
             }
-            let child = spawn_harness(&dsh).map_err(|e| format!("failed to restart dsh: {e}"))?;
+            let mut child = spawn_harness(&dsh).map_err(|e| format!("failed to restart dsh: {e}"))?;
+            wait_for_harness(BOOT_TIMEOUT, &mut child)?;
             *state.0.lock().unwrap() = Some(child);
-            if !wait_for_harness(BOOT_TIMEOUT) {
-                return Err(format!("harness 重启后未就绪（{HARNESS_URL}）"));
-            }
         }
     }
     navigate_to_harness(app)?;
     Ok(HarnessStatus {
         running: true,
-        url: Some(HARNESS_URL.to_string()),
+        url: Some(harness_url()),
     })
 }
 
@@ -618,8 +655,24 @@ pub fn run() {
         .setup(|app| {
             let open_main = MenuItem::with_id(app, "open-main", "打开主界面", true, None::<&str>)?;
             let mobile = MenuItem::with_id(app, "mobile-qr", "手机互联（扫码访问）", true, None::<&str>)?;
+            // 标准 Edit 菜单（macOS 必需：WKWebView 的 Cmd+C/V 依赖菜单栏转发；
+            // PredefinedMenuItem 会自动连接系统编辑动作，Windows/Linux 上同样生效）
+            let edit_menu = Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app, None::<&str>)?,
+                    &PredefinedMenuItem::redo(app, None::<&str>)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::cut(app, None::<&str>)?,
+                    &PredefinedMenuItem::copy(app, None::<&str>)?,
+                    &PredefinedMenuItem::paste(app, None::<&str>)?,
+                    &PredefinedMenuItem::select_all(app, None::<&str>)?,
+                ],
+            )?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open_main, &mobile, &quit])?;
+            let menu = Menu::with_items(app, &[&open_main, &mobile, &edit_menu, &quit])?;
             app.set_menu(menu.clone())?;
             // 系统托盘：菜单栏常驻入口，更醒目
             TrayIconBuilder::with_id("main-tray")

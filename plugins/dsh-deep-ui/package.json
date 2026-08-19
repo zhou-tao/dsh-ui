@@ -1,6 +1,6 @@
 {
   "name": "dsh-deep-ui",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "dsh UI 层增强插件：每轮回答结束后自动折叠 AI 思考过程（工具调用/推理/步骤），摘要\"已工作 X 分 X 秒\"+ 折叠图标，后续在此持续优化 UI 层面",

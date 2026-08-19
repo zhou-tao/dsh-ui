@@ -1,7 +1,7 @@
 {
   "name": "dsh-ui",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "deepseek-harness UI layer: Tauri desktop app + VS Code extension (monorepo)",
   "packageManager": "pnpm@9.15.9",
   "scripts": {
