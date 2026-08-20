@@ -43,7 +43,7 @@ A UI-client monorepo built for [DeepSeek Harness](https://github.com/deepseek-ai
 ### Prerequisites
 - Node ≥ 22, pnpm 9
 - Rust toolchain (needed to build the desktop app)
-- A running harness (`dsh --profile web`, default 127.0.0.1:3080) — all clients reuse an already-running harness
+- The desktop app **needs no pre-existing harness**: it auto-starts its own `dsh web` on `127.0.0.1:3088` (data dir `~/.dsh-ui`); TUI / VS Code / H5 need a running harness (default `127.0.0.1:3080`)
 
 ### 1) Desktop (DeepSeek Harness UI)
 ```bash
@@ -53,6 +53,7 @@ pnpm --filter @dsh-ui/desktop tauri:build  # package (.dmg / .msi / .exe)
 ```
 - macOS: `DeepSeek Harness UI.app` (builds for both Apple Silicon and Intel); Windows: `.msi` / `.exe`
 - Release builds are available from **GitHub Releases**
+- The desktop app listens on **`127.0.0.1:3088`** by default (override with the `DSH_UI_PORT` env var) and uses its own data dir **`~/.dsh-ui`** (override with `DSH_HOME`), so it never collides with the GUI harness on 3080; on first launch it reuses LLM credentials from `~/.dsh` when readable
 
 > **macOS says "app is damaged" on first launch?** That is Gatekeeper's normal block for unsigned builds (misleading wording — the file itself is not corrupted). Pick one:
 >

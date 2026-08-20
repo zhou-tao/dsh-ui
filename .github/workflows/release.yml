@@ -168,6 +168,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build protocol + mobile-h5 (桌面 bundle 需内置 H5 dist)
+        run: |
+          pnpm --filter @dsh-ui/protocol build
+          pnpm --filter @dsh-ui/mobile-h5 build
+
       - name: Build & upload release assets
         uses: tauri-apps/tauri-action@v0
         env:

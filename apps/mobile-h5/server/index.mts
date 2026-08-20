@@ -5,13 +5,20 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { networkInterfaces } from 'node:os';
 import { qrSvg } from './qr-svg.js';
 
 const HARNESS = process.env.HARNESS_URL ?? 'http://127.0.0.1:3080';
 const PORT = Number(process.env.PORT ?? 4173);
-const DIST = join(import.meta.dirname, '..', 'dist');
+// H5 静态产物定位，兼容两种布局（issue #6）：
+// - dev/独立运行：dist-server/../dist（apps/mobile-h5/dist）
+// - 桌面 bundle：Contents/Resources/resources/dist（与 mobile-bridge.js 同目录）
+// 优先同目录，其次父级，都找不到时报错而不是静默 404。
+const DIST = [join(import.meta.dirname, 'dist'), join(import.meta.dirname, '..', 'dist')]
+  .find((p) => existsSync(p))
+  ?? (() => { throw new Error('未找到 H5 dist：' + import.meta.dirname); })();
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',

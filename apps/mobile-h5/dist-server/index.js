@@ -1859,6 +1859,7 @@ import { createServer } from "http";
 import { spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { readFile } from "fs/promises";
+import { existsSync } from "fs";
 import { join, extname } from "path";
 import { networkInterfaces } from "os";
 
@@ -1888,7 +1889,9 @@ function qrSvg(text, opts = {}) {
 // server/index.mts
 var HARNESS = process.env.HARNESS_URL ?? "http://127.0.0.1:3080";
 var PORT = Number(process.env.PORT ?? 4173);
-var DIST = join(import.meta.dirname, "..", "dist");
+var DIST = [join(import.meta.dirname, "dist"), join(import.meta.dirname, "..", "dist")].find((p) => existsSync(p)) ?? (() => {
+  throw new Error("\u672A\u627E\u5230 H5 dist\uFF1A" + import.meta.dirname);
+})();
 var MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",

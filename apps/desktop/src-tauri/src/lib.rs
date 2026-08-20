@@ -10,11 +10,11 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
 
 const HARNESS_HOST: &str = "127.0.0.1";
-const DEFAULT_HARNESS_PORT: u16 = 3080;
+const DEFAULT_HARNESS_PORT: u16 = 3088;
 const BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 const BRIDGE_PORT: u16 = 4173;
 
-/// harness 端口：DSH_UI_PORT 环境变量覆盖（默认 3080）。
+/// harness 端口：DSH_UI_PORT 环境变量覆盖（默认 3088，避开 GUI harness 的 3080）。
 /// 便于端口冲突时换端口（与 README 的说明一致）。
 fn harness_port() -> u16 {
     std::env::var("DSH_UI_PORT")
@@ -100,7 +100,24 @@ fn on_path(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// 解析 dsh 启动方式：PATH 上的 dsh → npx @deepseek-ai/dsh（本机经 npx 缓存运行）→ 常见绝对路径。
+/// 在 npx 缓存目录里查找 @deepseek-ai/dsh 的可执行 bin（~/.npm/_npx/*/node_modules/.bin/dsh），
+/// 与 GUI harness 的启动方式一致（node .../.bin/dsh）。优先走它可绕开 npm exec 的
+/// 联网元数据解析（本机经代理时可能卡在 registry 连接上，导致 dsh 永不启动）。
+fn find_npx_dsh_bin() -> Option<String> {
+    let home = std::env::var_os("HOME")?;
+    let npx_root = Path::new(&home).join(".npm").join("_npx");
+    let rd = std::fs::read_dir(&npx_root).ok()?;
+    for entry in rd.flatten() {
+        let bin = entry.path().join("node_modules").join(".bin").join("dsh");
+        // fs::metadata 跟随符号链接：悬空/不可执行则跳过
+        if std::fs::metadata(&bin).is_ok() {
+            return Some(bin.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+/// 解析 dsh 启动方式：npx 缓存 bin → PATH 上的 dsh → npx @deepseek-ai/dsh → 常见绝对路径。
 /// Windows 下 npm 全局安装会生成 dsh.cmd / npx.cmd shim，需按扩展名探测。
 fn resolve_dsh() -> String {
     if let Ok(p) = std::env::var("DSH_UI_DSH") {
@@ -134,6 +151,9 @@ fn resolve_dsh() -> String {
     }
     #[cfg(not(target_os = "windows"))]
     {
+        if let Some(bin) = find_npx_dsh_bin() {
+            return bin;
+        }
         if on_path("dsh") {
             return "dsh".to_string();
         }
@@ -178,10 +198,11 @@ fn spawn_harness(dsh: &str) -> std::io::Result<Child> {
         cmd.arg("--yes").arg("@deepseek-ai/dsh");
     }
     cmd.arg("--profile").arg("web");
-    // 端口跟随 DSH_UI_PORT（默认 3080），与 harness_listening/harness_url 保持一致
-    if harness_port() != DEFAULT_HARNESS_PORT {
-        cmd.arg("--port").arg(harness_port().to_string());
-    }
+    // 端口跟随 DSH_UI_PORT（默认 3088），与 harness_listening/harness_url 保持一致。
+    // 必须无条件传 --port：dsh CLI 默认监听 3080，不传会与 GUI harness 冲突。
+    cmd.arg("--port").arg(harness_port().to_string());
+    // 独立数据目录（~/.dsh-ui）：避免与 root 运行的 GUI harness 共享 ~/.dsh 触发 EACCES
+    cmd.env("DSH_HOME", dsh_home_string());
     let _ = apply_child_path(&mut cmd);
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -191,18 +212,39 @@ fn spawn_harness(dsh: &str) -> std::io::Result<Child> {
 
 // ---------- plugins/ 自动安装到 harness profile（issue #2） ----------
 
-/// dsh 数据目录：DSH_HOME 环境变量 > 用户主目录/.dsh。
-fn dsh_home_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+/// 客户端专属 dsh 数据目录（字符串）：DSH_HOME 环境变量 > $HOME/.dsh-ui。
+/// 与 GUI harness（可能以 sudo/root 运行并写 ~/.dsh）隔离：客户端自起的
+/// 3088 harness 使用独立 profile/会话/存储，避免 root 属主文件导致 EACCES。
+fn dsh_home_string() -> String {
     if let Ok(h) = std::env::var("DSH_HOME") {
         let h = h.trim();
         if !h.is_empty() {
-            return Ok(PathBuf::from(h));
+            return h.to_string();
         }
     }
-    app.path()
-        .home_dir()
-        .map(|h| h.join(".dsh"))
-        .map_err(|e| format!("无法获取用户主目录: {e}"))
+    std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".dsh-ui").to_string_lossy().into_owned())
+        .unwrap_or_else(|| ".dsh-ui".to_string())
+}
+
+/// 客户端 dsh 数据目录（默认 ~/.dsh-ui，DSH_HOME 可覆盖）。
+fn dsh_home_dir(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(PathBuf::from(dsh_home_string()))
+}
+
+/// 首次启动时从系统 ~/.dsh 播种凭证/用户标识（仅当客户端 home 缺失且源可读时）。
+/// GUI harness 与客户端同用户运行时，客户端直接复用同一套 LLM 凭证。
+fn seed_client_home(app: &tauri::AppHandle) {
+    let Ok(client) = dsh_home_dir(app) else { return };
+    let Ok(main) = app.path().home_dir().map(|h| h.join(".dsh")) else { return };
+    for name in [".credentials.yaml", ".anonymous-user-id"] {
+        let src = main.join(name);
+        let dst = client.join(name);
+        if src.exists() && !dst.exists() {
+            let _ = std::fs::create_dir_all(&client);
+            let _ = std::fs::copy(&src, &dst);
+        }
+    }
 }
 
 /// 当前 harness profile 目录（默认 web，可用 DSH_PROFILE 覆盖）。
@@ -306,11 +348,13 @@ fn ensure_plugins_installed(app: &tauri::AppHandle) -> Result<bool, String> {
       name: '{id}'")).collect::<Vec<_>>().join("
 ")
         );
-        let new_patch = if patch.trim() == "[]" {
+        // 兼容两种占位形态：纯 `[]`，或带注释头的 `# ...\n[]`（dsh 新建 profile 的脚手架形态）
+        let has_empty_list = patch.lines().any(|l| l.trim() == "[]");
+        let new_patch = if has_empty_list {
             let kept = patch.lines().filter(|l| l.trim() != "[]").collect::<Vec<_>>().join("
 ");
             format!("{}
-{}", kept, block.trim_start())
+{}", kept.trim_end(), block.trim_start())
         } else {
             format!("{}
 {}", patch.trim_end(), block)
@@ -370,6 +414,10 @@ const INJECT_JS: &str = include_str!("../resources/inject.js");
 
 pub struct HarnessState(pub Mutex<Option<Child>>);
 pub struct BridgeState(pub Mutex<Option<Child>>);
+
+/// 引导互斥：setup 线程与前端 invoke('start_harness') 可能并发调用，
+/// 避免对同一 DSH_HOME 双重 spawn 互相踩踏（并发引导会互相超时/冲突）。
+static HARNESS_BOOT_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(serde::Serialize, Clone)]
 pub struct HarnessStatus {
@@ -472,6 +520,9 @@ fn start_bridge(app: tauri::AppHandle, state: State<'_, BridgeState>) -> Result<
     let script = std::fs::canonicalize(&script).map_err(|e| format!("桥接脚本无效 {script}: {e}"))?;
     let mut bridge_cmd = Command::new(resolve_node());
     bridge_cmd.arg(&script);
+    // 桥接 /api 代理指向客户端自己的 harness（DSH_HOME 隔离后默认 3088，
+    // 不再指向 GUI 的 3080），保证手机看到的是与桌面窗口相同的会话
+    bridge_cmd.env("HARNESS_URL", harness_url());
     let _ = apply_child_path(&mut bridge_cmd);
     let child = bridge_cmd
         .stdin(Stdio::null())
@@ -505,6 +556,9 @@ fn harness_status(state: State<'_, HarnessState>) -> HarnessStatus {
 /// 共享启动逻辑：harness 已在运行则直接导航，否则 spawn + 等待就绪 + 导航。
 /// 启动前自动把 plugins/ 下的插件装进 harness profile（幂等；首次运行 profile 创建后再补装并重启一次）。
 fn do_start_harness(state: &State<'_, HarnessState>, app: &tauri::AppHandle) -> Result<HarnessStatus, String> {
+    seed_client_home(app);
+    // 并发保护：同一时刻只允许一次引导（第二个调用者等待首个完成后再复用）
+    let _boot_guard = HARNESS_BOOT_LOCK.lock().unwrap();
     if state.0.lock().unwrap().is_some() || harness_listening() {
         // 已在运行：补装插件（幂等，下次重启生效），直接导航
         let _ = ensure_plugins_installed(app);

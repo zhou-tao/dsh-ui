@@ -43,7 +43,7 @@
 ### 前置依赖
 - Node ≥ 22、pnpm 9
 - Rust 工具链（桌面端编译需要）
-- harness 运行中（`dsh --profile web`，默认 127.0.0.1:3080）——各客户端自动复用已运行的 harness
+- 桌面端**无需预置 harness**：打开时自动在 `127.0.0.1:3088` 启动独立的 dsh web（数据目录 `~/.dsh-ui`）；TUI / VS Code / H5 需要 harness 运行中（默认 `127.0.0.1:3080`）
 
 ### 1) 桌面端（DeepSeek Harness UI）
 ```bash
@@ -53,6 +53,7 @@ pnpm --filter @dsh-ui/desktop tauri:build  # 打包（.dmg / .msi / .exe）
 ```
 - macOS：`DeepSeek Harness UI.app`（Apple Silicon 与 Intel 均有对应构建）；Windows：`.msi` / `.exe`
 - 发布版从 **GitHub Release** 获取
+- 桌面端默认监听 **`127.0.0.1:3088`**（环境变量 `DSH_UI_PORT` 可换端口），使用独立数据目录 **`~/.dsh-ui`**（`DSH_HOME` 可覆盖），与 3080 的 GUI harness 互不干扰；首次启动自动从 `~/.dsh` 复用 LLM 凭证
 
 > **macOS 首次打开提示"已损坏"？** 这是 Gatekeeper 对未签名构建的正常拦截（提示措辞有误导性，文件本身没有损坏）。任选一种方式打开：
 >

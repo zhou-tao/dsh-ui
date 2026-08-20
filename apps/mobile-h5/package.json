@@ -1,6 +1,6 @@
 {
   "name": "@dsh-ui/mobile-h5",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "DeepSeek Harness 手机互联 H5：移动端会话浏览/发消息，桥接服务代理 API（harness 绑定 127.0.0.1 且拒绝局域网 Origin，需同源桥）",

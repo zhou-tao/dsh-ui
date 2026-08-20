@@ -112,6 +112,12 @@ window.__ModuleLoader__.load({
       return false;
     }
     const areaRect = area ? area.getBoundingClientRect() : null;
+    // 侧边栏折叠(rail)态:设置区窄到只放得下设置图标,没有 FAB 的容身之处 → 隐藏,
+    // 避免 FAB 压在设置按钮上(折叠后设置按钮为纯图标、无文本,/设置|settings/ 匹配落空)
+    if (areaRect && areaRect.width < 80) {
+      fab.style.visibility = 'hidden';
+      return false;
+    }
     const S = 28;
     if (areaRect) {
       // 左侧边距 = 设置图标左缘到设置区左缘的距离；FAB 右缘到右侧分界线的距离与之镜像一致

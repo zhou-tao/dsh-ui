@@ -1,12 +1,12 @@
 {
   "name": "@dsh-ui/desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "DeepSeek Harness desktop shell (Tauri 2). Spawns the harness web profile and hosts its UI in a native window.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node -e \"const fs=require('fs');fs.copyFileSync('../mobile-h5/dist-server/index.js','src-tauri/resources/mobile-bridge.js');for(const p of ['dsh-deep-ui','dsh-remote']){fs.cpSync('../../plugins/'+p,'src-tauri/resources/plugins/'+p,{recursive:true})}\"",
+    "build": "tsc --noEmit && vite build && node -e \"const fs=require('fs');if(!fs.existsSync('../mobile-h5/dist-server/index.js'))throw new Error('缺少 ../mobile-h5/dist-server，请先构建 @dsh-ui/mobile-h5');fs.copyFileSync('../mobile-h5/dist-server/index.js','src-tauri/resources/mobile-bridge.js');if(!fs.existsSync('../mobile-h5/dist'))throw new Error('缺少 ../mobile-h5/dist，请先构建 @dsh-ui/mobile-h5');fs.cpSync('../mobile-h5/dist','src-tauri/resources/dist',{recursive:true});for(const p of ['dsh-deep-ui','dsh-remote']){fs.cpSync('../../plugins/'+p,'src-tauri/resources/plugins/'+p,{recursive:true})}\"",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
